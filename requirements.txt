@@ -1,0 +1,16 @@
+fastmcp
+requests
+pydantic
+python-dotenv
+beautifulsoup4
+lxml
+Pillow
+PyMuPDF
+reportlab
+python-docx
+openpyxl
+playwright
+pyautogui
+openai
+pytest
+streamlit
