@@ -118,10 +118,22 @@ class ContextManager:
                 "verification_required_by",
                 "the previous mutation",
             )
+            targets = state.metadata.get(
+                "verification_targets",
+                [],
+            )
+            target_context = (
+                " Verify these affected paths: "
+                + ", ".join(targets)
+                + "."
+                if targets
+                else ""
+            )
             sections.append(
                 f"Verification is required after {mutation}. "
                 "Do not finish or make another mutation until "
                 "a verification tool succeeds."
+                + target_context
             )
 
         if state.unresolved_tool_failures:

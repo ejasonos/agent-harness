@@ -3,12 +3,12 @@ from tempfile import TemporaryDirectory
 from unittest.mock import Mock
 
 from agent.context import ContextManager
-from agent.evaluator import NextAction
-from agent.loop import AgentLoop
+from agent.evaluator import Evaluation, NextAction
+from agent.loop import AgentLoop, AgentLoopConfig
 from agent.state import AgentState, ToolExecution
 from mcp_client.registry import ToolRegistry
 from mcp_client.schemas import MCPTool, ToolPolicy
-from model.messages import ToolCall
+from model.messages import ModelResponse, ToolCall
 from workspace.manager import WorkspaceManager
 
 
@@ -224,6 +224,98 @@ def test_failed_verification_result_keeps_verification_pending():
             success=True,
         )
     )
+
+
+def test_tool_call_batch_finishes_before_verification():
+    tool_policies = {
+        "write_file": ToolPolicy(verify_after=True),
+        "run_tests": ToolPolicy(),
+    }
+    registry = SimpleNamespace(
+        discover=lambda: [],
+        to_openai_tools=lambda: [],
+        get=lambda name: MCPTool(
+            name=name,
+            policy=tool_policies.get(name, ToolPolicy()),
+        ),
+    )
+    calls = [
+        ToolCall(
+            tool_name="write_file",
+            arguments={"path": f"poem{index}.txt"},
+            call_id=f"write-{index}",
+        )
+        for index in range(1, 4)
+    ]
+    plans = iter(
+        [
+            SimpleNamespace(
+                response=ModelResponse(tool_calls=calls),
+            ),
+            SimpleNamespace(
+                response=ModelResponse(
+                    tool_calls=[
+                        ToolCall(
+                            tool_name="run_tests",
+                            arguments={},
+                            call_id="verify",
+                        )
+                    ]
+                ),
+            ),
+        ]
+    )
+    loop = AgentLoop.__new__(AgentLoop)
+    loop.config = AgentLoopConfig(max_iterations=3)
+    loop.registry = registry
+    loop.workspace = WorkspaceManager(".")
+    loop.context = ContextManager()
+    loop.recovery = Mock()
+    loop.planner = SimpleNamespace(
+        plan=lambda _state, tools: next(plans),
+    )
+    execution_order = []
+
+    def execute(_state, tool_call):
+        execution_order.append(tool_call.tool_name)
+        return ToolExecution(
+            tool_name=tool_call.tool_name,
+            arguments=tool_call.arguments,
+            result={"success": True},
+            success=True,
+        )
+
+    def evaluate(state, tool_execution=None):
+        if tool_execution.tool_name == "write_file":
+            assert execution_order == [
+                "write_file",
+                "write_file",
+                "write_file",
+            ]
+        else:
+            assert execution_order[-1] == "run_tests"
+        return Evaluation(
+            evidence_sufficient=True,
+            task_complete=True,
+            goal_complete=True,
+            reason="verified",
+            next_action=NextAction.FINISH,
+        )
+
+    loop._execute_tool = execute
+    loop.evaluator = SimpleNamespace(evaluate=evaluate)
+
+    state = loop.run("Create three poems")
+
+    assert state.completed
+    assert execution_order == [
+        "write_file",
+        "write_file",
+        "write_file",
+        "run_tests",
+    ]
+    assert state.verification_pending is False
+    assert state.metadata.get("verification_targets") is None
 
 
 def test_final_synthesis_receives_tool_results():

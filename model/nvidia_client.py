@@ -94,7 +94,72 @@ class NVIDIAClient:
                     f"Unsupported message type: {type(message).__name__}"
                 )
 
-        return normalized
+        return self._split_multi_call_turns(normalized)
+
+    @staticmethod
+    def _split_multi_call_turns(
+        messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Serialize completed tool batches as single-call turns."""
+        result: list[dict[str, Any]] = []
+        index = 0
+
+        while index < len(messages):
+            message = messages[index]
+            tool_calls = message.get("tool_calls")
+
+            if (
+                message.get("role") != "assistant"
+                or not isinstance(tool_calls, list)
+                or len(tool_calls) < 2
+            ):
+                result.append(message)
+                index += 1
+                continue
+
+            call_ids = [
+                call.get("id")
+                for call in tool_calls
+                if isinstance(call, dict)
+            ]
+            if (
+                len(call_ids) != len(tool_calls)
+                or any(not call_id for call_id in call_ids)
+                or len(set(call_ids)) != len(call_ids)
+            ):
+                result.append(message)
+                index += 1
+                continue
+
+            responses: dict[str, dict[str, Any]] = {}
+            cursor = index + 1
+            while cursor < len(messages):
+                tool_message = messages[cursor]
+                if tool_message.get("role") != "tool":
+                    break
+                tool_call_id = tool_message.get("tool_call_id")
+                if tool_call_id not in call_ids:
+                    break
+                responses[tool_call_id] = tool_message
+                cursor += 1
+
+            if any(call_id not in responses for call_id in call_ids):
+                result.append(message)
+                index += 1
+                continue
+
+            for tool_call, call_id in zip(tool_calls, call_ids):
+                result.append(
+                    {
+                        **message,
+                        "tool_calls": [tool_call],
+                    }
+                )
+                result.append(responses[call_id])
+
+            index = cursor
+
+        return result
 
     def _parse_response(
         self,

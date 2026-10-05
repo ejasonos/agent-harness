@@ -256,7 +256,9 @@ class AgentLoop:
             # EXECUTE TOOL CALLS
             # -----------------------------------------------------
 
-            stop_after_evaluation = False
+            batch_verification_tools: list[str] = []
+            batch_verification_targets: list[str] = []
+            last_execution: ToolExecution | None = None
 
             for tool_call in response.tool_calls:
 
@@ -293,6 +295,7 @@ class AgentLoop:
                 state.add_tool_execution(
                     execution
                 )
+                last_execution = execution
 
                 # -------------------------------------------------
                 # TOOL FAILED
@@ -371,10 +374,14 @@ class AgentLoop:
                     registered_tool is not None
                     and registered_tool.policy.verify_after
                 ):
-                    state.verification_pending = True
-                    state.metadata[
-                        "verification_required_by"
-                    ] = tool_call.tool_name
+                    batch_verification_tools.append(
+                        tool_call.tool_name
+                    )
+                    target = self._extract_path_argument(
+                        tool_call.arguments
+                    )
+                    if target is not None:
+                        batch_verification_targets.append(target)
                 elif (
                     tool_call.tool_name
                     in VERIFICATION_TOOL_NAMES
@@ -387,10 +394,15 @@ class AgentLoop:
                         "verification_required_by",
                         None,
                     )
+                    state.metadata.pop(
+                        "verification_targets",
+                        None,
+                    )
 
                 if (
                     not state.unresolved_tool_failures
                     and not state.verification_pending
+                    and len(response.tool_calls) == 1
                     and self._is_direct_delete_request(
                         state.task,
                         execution,
@@ -402,52 +414,31 @@ class AgentLoop:
                     )
                     return state
 
-                # -------------------------------------------------
-                # EVALUATE PROGRESS
-                # -------------------------------------------------
-
-                evaluation = (
-                    self.evaluator.evaluate(
-                        state=state,
-                        tool_execution=execution,
+            if batch_verification_tools:
+                state.verification_pending = True
+                state.metadata["verification_required_by"] = ", ".join(
+                    dict.fromkeys(batch_verification_tools)
+                )
+                if batch_verification_targets:
+                    state.metadata["verification_targets"] = list(
+                        dict.fromkeys(batch_verification_targets)
                     )
+
+            if last_execution is not None:
+                evaluation = self.evaluator.evaluate(
+                    state=state,
+                    tool_execution=last_execution,
                 )
+                self._store_evaluation(state, evaluation)
 
-                self._store_evaluation(
-                    state,
-                    evaluation,
-                )
-
-                # -------------------------------------------------
-                # HONOR EVALUATOR CONTROL DECISION
-                # -------------------------------------------------
-
-                if self._handle_evaluation(
-                    state,
-                    evaluation,
-                ):
+                if self._handle_evaluation(state, evaluation):
                     return state
-
-                # -------------------------------------------------
-                # STOP EXECUTING REMAINING TOOL CALLS IF THE
-                # EVALUATOR HAS MOVED THE AGENT TO ANOTHER PHASE.
-                # -------------------------------------------------
-
-                if state.verification_pending or evaluation.next_action in {
-                    NextAction.SYNTHESIZE,
-                    NextAction.FINISH,
-                }:
-                    stop_after_evaluation = True
-                    break
 
             # -----------------------------------------------------
             # CLEAR CURRENT TOOL CALLS
             # -----------------------------------------------------
 
             state.current_tool_calls = []
-
-            if stop_after_evaluation:
-                continue
 
         # ---------------------------------------------------------
         # MAXIMUM ITERATIONS REACHED
@@ -780,7 +771,6 @@ class AgentLoop:
         policy = tool.policy
 
         # ---------------------------------------------------------
-        # PREVENT EXACT FAILED CALL REPETITION
         # ---------------------------------------------------------
 
         if (

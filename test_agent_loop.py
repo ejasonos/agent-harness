@@ -45,7 +45,7 @@ agent = AgentLoop(
 )
 
 task = """
-Tell me about the Dangote Refinery IPO
+create a poem folder and create three different poem files in it having loving poems with two stanzas each.
 """
 
 state = agent.run(task)
