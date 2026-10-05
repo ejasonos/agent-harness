@@ -33,7 +33,6 @@ PYTHON_FRAMEWORKS: dict[str, str] = {
     "fastapi": "FastAPI",
     "starlette": "Starlette",
     "tornado": "Tornado",
-    "streamlit": "Streamlit",
     "gradio": "Gradio",
 }
 

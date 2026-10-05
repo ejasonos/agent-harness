@@ -1,1 +1,10 @@
-delete the math_fns.py file.
+.env
+node_modules
+.env*
+*.env
+pnpm-lock.yaml
+*.pnpm
+package-lock.json
+node_modules/*
+.git
+.next

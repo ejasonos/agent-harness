@@ -45,6 +45,7 @@ agent = AgentLoop(
 )
 
 task = """
+Tell me about the Dangote Refinery IPO
 """
 
 state = agent.run(task)

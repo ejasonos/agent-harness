@@ -888,10 +888,10 @@ def browser_scroll(
 @_network_required
 def web_search(
     query: str,
-    max_results: int = 10,
-) -> list[dict[str, str]]:
+    max_results: int = 5,
+) -> dict[str, object]:
     """
-    Search the public web and return relevant links.
+    Search the public web with Tavily and return structured results.
     """
 
     return _web_search(

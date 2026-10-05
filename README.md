@@ -1,10 +1,10 @@
 # Local Agent
 
-Local Agent is a model-directed coding assistant. It connects a model to an HTTP MCP server that exposes workspace, Git, shell, browser, conversion, screenshot, testing, and math tools. The Streamlit interface is the recommended way to submit tasks and review tool activity.
+Local Agent is a model-directed AI agent. It connects a model to an HTTP MCP server that exposes workspace, Git, shell, browser, conversion, screenshot, testing, and math tools. Use the Python `AgentLoop` API to submit tasks and inspect tool activity.
 
 ## Quick Start
 
-Run commands from the project directory. The MCP server and the Streamlit interface run as separate processes, so keep two terminals open.
+Run commands from the project directory. The MCP server and the Python program that runs the agent are separate processes, so keep two terminals open.
 
 ### 1. Install dependencies
 
@@ -27,7 +27,7 @@ The default provider is Ollama, using `gemma4:e4b` at `http://127.0.0.1:11434`. 
 ollama pull gemma4:e4b
 ```
 
-Alternatively, configure an NVIDIA API key and select **NVIDIA API** in the app. The default NVIDIA model is `meta/llama-3.2-11b-vision-instruct`.
+Alternatively, configure `NVIDIA_API_KEY` and construct an `NVIDIAClient` in your Python program. The default NVIDIA model is `meta/llama-3.2-11b-vision-instruct`.
 
 ### 3. Start the MCP server
 
@@ -39,17 +39,54 @@ python fastmcp_tools_http.py
 
 The server listens on `http://127.0.0.1:8082/mcp` by default. Leave this process running while using the app.
 
-### 4. Start the user interface
+### 4. Run an agent task
 
-In a second terminal, also from the project directory:
+In a second terminal, from the project directory, create or run a Python program that constructs the agent and calls `agent.run(task)`. For example:
 
-```powershell
-streamlit run streamlit_app.py
+```python
+from dotenv import load_dotenv
+
+from agent.loop import AgentLoop
+from config.settings import load_settings
+from mcp_client.client import MCPClient
+from mcp_client.registry import ToolRegistry
+from model.ollama_client import OllamaClient
+from workspace.manager import WorkspaceManager
+
+load_dotenv()
+
+workspace_path = r"D:\work\my-project"
+settings = load_settings(workspace_path)
+mcp_client = MCPClient(settings)
+workspace = WorkspaceManager(
+	settings.require_workspace(),
+	allow_delete=settings.allow_delete,
+	allow_write=True,
+	allow_git_write=settings.allow_git_write,
+	allow_shell=settings.allow_shell,
+	allow_network=settings.allow_network,
+)
+model = OllamaClient(
+	model=settings.model,
+	base_url=settings.ollama_host,
+	timeout=600,
+)
+agent = AgentLoop(
+	model=model,
+	mcp_client=mcp_client,
+	registry=ToolRegistry(mcp_client),
+	workspace=workspace,
+)
+
+result = agent.run("Explain the project structure")
+print(result.final_answer)
+if result.error:
+	print(result.error)
 ```
 
-Open the local URL printed by Streamlit, usually `http://localhost:8501`. Choose a workspace, MCP endpoint, and model provider in the sidebar, then enter a task in the chat box. Review the tool activity and results in the assistant response.
+Replace the example task and workspace path with your own. `result.tool_executions` contains each tool's name, reason, arguments, result, and status. To use NVIDIA instead of Ollama, construct `NVIDIAClient` with `settings.nvidia_model`, `settings.nvidia_api_key`, and `settings.nvidia_endpoint`.
 
-The MCP server and the app must use the same workspace directory. The UI checks and applies its workspace setting locally; the server independently uses `AGENT_WORKSPACE` or the directory from which it was started.
+The MCP server and agent program must use the same workspace directory. The server uses `AGENT_WORKSPACE` or its current working directory; `load_settings(workspace_path)` configures the agent's local workspace.
 
 ### Use a different workspace
 
@@ -59,11 +96,11 @@ In each PowerShell terminal, set `AGENT_WORKSPACE` to the existing project direc
 $env:AGENT_WORKSPACE = "D:\work\my-project"
 ```
 
-Then start `python fastmcp_tools_http.py` in one terminal and `streamlit run streamlit_app.py` in the other. PowerShell environment variables are scoped to their terminal, so set the value in both terminals. In the app sidebar, set **Agent workspace** to the same directory. Alternatively, put `AGENT_WORKSPACE=D:\work\my-project` in the project `.env` file; both processes load it at startup. Restart the MCP server after changing the workspace.
+Then start `python fastmcp_tools_http.py` in one terminal and your Python agent program in the other. PowerShell environment variables are scoped to their terminal, so set the value in both terminals. Alternatively, put `AGENT_WORKSPACE=D:\work\my-project` in the project `.env` file; the MCP server reads it at startup. Restart the server after changing the workspace.
 
 ## Configuration
 
-Both the server and Streamlit app load a `.env` file from the project directory. Environment variables override the defaults. For example:
+The MCP server and your agent program can load a `.env` file from the project directory. Environment variables override the defaults. For example:
 
 ```dotenv
 AGENT_WORKSPACE=C:\path\to\your\project
@@ -75,6 +112,9 @@ OLLAMA_MODEL=gemma4:e4b
 NVIDIA_API_KEY=your-key
 NVIDIA_ENDPOINT=https://integrate.api.nvidia.com/v1
 NVIDIA_MODEL=meta/llama-3.2-11b-vision-instruct
+
+# Required for web_search
+TAVILY_API_KEY=your-tavily-key
 
 # Tool permissions
 ALLOW_DELETE=true
@@ -94,6 +134,7 @@ Available runtime settings include:
 | `NVIDIA_API_KEY` | Unset | Required when using NVIDIA API. |
 | `NVIDIA_ENDPOINT` | `https://integrate.api.nvidia.com/v1` | NVIDIA-compatible API endpoint. |
 | `NVIDIA_MODEL` | `meta/llama-3.2-11b-vision-instruct` | Default NVIDIA model. |
+| `TAVILY_API_KEY` | Unset | Required by the Tavily-backed `web_search` tool. |
 | `ALLOW_DELETE` | `true` | Enables delete operations. Set to `false` to disable them. |
 | `ALLOW_GIT_WRITE` | `false` | Enables Git mutations. |
 | `ALLOW_SHELL` | `true` | Enables shell and process tools. |
@@ -144,6 +185,6 @@ Run the focused pytest suite:
 python -m pytest -q test/tests
 ```
 
-If the Streamlit app cannot connect, first confirm the MCP server is still running and that the URL in the sidebar points to it. If model requests fail, check that Ollama is running with the selected model or that `NVIDIA_API_KEY` is configured.
+If the agent cannot connect, confirm the MCP server is running and that `MCP_URL` points to it. If model requests fail, check that Ollama is running with the selected model or that `NVIDIA_API_KEY` is configured.
 
 `test_agent_loop.py` is a development harness with a task defined in the file, not a general command-line interface. It can execute real tools against its configured workspace; review its task and workspace before running it.

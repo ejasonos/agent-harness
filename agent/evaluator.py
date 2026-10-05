@@ -88,7 +88,8 @@ class Evaluator:
                     role="system",
                     content=(
                         "You are the evidence and completion evaluator "
-                        "for an autonomous software engineering agent.\n\n"
+                        "for an AI Agent that performs tasks using its "
+                        "available tools.\n\n"
                         "Your responsibility is to determine:\n"
                         "1. whether enough evidence has been gathered,\n"
                         "2. whether the user's goal is complete, and\n"
@@ -141,7 +142,8 @@ class Evaluator:
             )
 
         return f"""
-Evaluate the progress of an autonomous coding agent.
+Evaluate the progress of an AI Agent that performs tasks using its
+available tools.
 
 ORIGINAL USER TASK:
 {state.task}

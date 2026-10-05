@@ -677,7 +677,8 @@ class AgentLoop:
                 role="system",
                 content=(
                     "You are the final answer synthesizer for an "
-                    "autonomous software engineering agent.\n\n"
+                    "AI Agent that performs tasks using its available "
+                    "tools.\n\n"
                     "The investigation phase is complete.\n"
                     "Do not call tools.\n"
                     "Do not request additional investigation.\n"

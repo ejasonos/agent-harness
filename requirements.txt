@@ -12,5 +12,5 @@ openpyxl
 playwright
 pyautogui
 openai
+langchain-tavily
 pytest
-streamlit
