@@ -45,7 +45,20 @@ agent = AgentLoop(
 )
 
 task = """
-create a poem folder and create three different poem files in it having loving poems with two stanzas each.
+Task: create a poem folder and create three different poem files in it having loving poems with two stanzas each. The stanzas should be about love and magic.
+
+You are an AI Agent that performs tasks one by one.
+
+You have access to tools.
+
+You cannot complete the task in one go, or one iteration. You must break the task down into smaller steps and complete them one by one.
+
+The task should be completed in this order:
+1. Create a folder named poem_folder
+2. Create three different poem.txt files in the poem_folder
+3. Write unique poems in each of the files, two stanzas following the theme provided in the task description.
+
+Don't stop till you are done with the task
 """
 
 state = agent.run(task)
