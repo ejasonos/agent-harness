@@ -149,6 +149,22 @@ class ContextManager:
                 + failures
             )
 
+        exhausted_tools = sorted(
+            name
+            for name, count in state.tool_failure_counts.items()
+            if count >= 3
+        )
+        if exhausted_tools:
+            sections.append(
+                "These tools have failed at least three times and must not "
+                "be called again: "
+                + ", ".join(exhausted_tools)
+                + ". Try a different tool only if it can add useful "
+                "information. Otherwise, provide a partial summary of "
+                "established information and clearly state what remains "
+                "unverified."
+            )
+
         if not sections:
             return None
 

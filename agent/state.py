@@ -84,6 +84,10 @@ class AgentState:
         default_factory=dict
     )
 
+    tool_failure_counts: dict[str, int] = field(
+        default_factory=dict
+    )
+
     # -------------------------------------------------------------
     # MESSAGE STATE
     # -------------------------------------------------------------

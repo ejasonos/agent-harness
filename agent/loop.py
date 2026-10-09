@@ -141,9 +141,19 @@ class AgentLoop:
             # ASK PLANNER WHAT TO DO NEXT
             # -----------------------------------------------------
 
+            exhausted_tools = {
+                name
+                for name, count in state.tool_failure_counts.items()
+                if count >= 3
+            }
+            available_tools = [
+                tool
+                for tool in tools
+                if tool["function"]["name"] not in exhausted_tools
+            ]
             plan = self.planner.plan(
                 state,
-                tools=tools,
+                tools=available_tools,
             )
 
             response = plan.response
@@ -153,6 +163,10 @@ class AgentLoop:
             # -----------------------------------------------------
 
             if not response.has_tool_calls:
+                answer = (
+                    response.content or ""
+                ).strip()
+
                 if state.unresolved_tool_failures:
                     last_execution = next(
                         (
@@ -168,9 +182,13 @@ class AgentLoop:
                     )
 
                     if last_execution is not None:
-                        state.fail(
-                            self._format_tool_failure(
-                                last_execution
+                        failure = self._format_tool_failure(
+                            last_execution
+                        )
+                        state.finish(
+                            self._format_partial_summary(
+                                answer,
+                                failure,
                             )
                         )
                     else:
@@ -179,16 +197,13 @@ class AgentLoop:
                                 state.unresolved_tool_failures.items()
                             )
                         )
-                        state.fail(
-                            f"{failed_tool} failed. "
-                            "The agent cannot report a successful result.\n"
-                            f"{error}"
+                        state.finish(
+                            self._format_partial_summary(
+                                answer,
+                                f"{failed_tool} failed: {error}",
+                            )
                         )
                     return state
-
-                answer = (
-                    response.content or ""
-                ).strip()
 
                 self.context.add_assistant_message(
                     state,
@@ -225,14 +240,6 @@ class AgentLoop:
                 response.tool_calls
             )
 
-            state.add_message(
-                Message(
-                    role="assistant",
-                    content=response.content or "",
-                    tool_calls=response.tool_calls,
-                )
-            )
-
             # -----------------------------------------------------
             # CHECK TOTAL TOOL-CALL LIMIT
             # -----------------------------------------------------
@@ -262,6 +269,31 @@ class AgentLoop:
 
             for tool_call in response.tool_calls:
 
+                if state.tool_failure_counts.get(
+                    tool_call.tool_name,
+                    0,
+                ) >= 3:
+                    state.add_message(
+                        Message(
+                            role="assistant",
+                            content=response.content or "",
+                            tool_calls=[tool_call],
+                        )
+                    )
+                    self.context.add_tool_message(
+                        state,
+                        content=(
+                            f"{tool_call.tool_name} has already failed at "
+                            "least three times. It is unavailable for this "
+                            "task. Choose a different useful action, or "
+                            "summarize established information and state "
+                            "what remains unverified."
+                        ),
+                        tool_name=tool_call.tool_name,
+                        tool_call_id=tool_call.call_id,
+                    )
+                    continue
+
                 # -------------------------------------------------
                 # CHECK TOOL POLICY
                 # -------------------------------------------------
@@ -274,6 +306,13 @@ class AgentLoop:
                 )
 
                 if policy_result is not None:
+                    state.add_message(
+                        Message(
+                            role="assistant",
+                            content=response.content or "",
+                            tool_calls=[tool_call],
+                        )
+                    )
                     self.context.add_tool_message(
                         state,
                         content=policy_result,
@@ -282,6 +321,14 @@ class AgentLoop:
                     )
 
                     continue
+
+                state.add_message(
+                    Message(
+                        role="assistant",
+                        content=response.content or "",
+                        tool_calls=[tool_call],
+                    )
+                )
 
                 # -------------------------------------------------
                 # EXECUTE TOOL
@@ -303,6 +350,13 @@ class AgentLoop:
 
                 if not execution.success:
 
+                    state.tool_failure_counts[
+                        tool_call.tool_name
+                    ] = state.tool_failure_counts.get(
+                        tool_call.tool_name,
+                        0,
+                    ) + 1
+
                     state.record_failed_tool_call(
                         tool_call.tool_name,
                         tool_call.arguments,
@@ -316,10 +370,22 @@ class AgentLoop:
                         )
                     )
 
+                    failure_count = state.tool_failure_counts[
+                        tool_call.tool_name
+                    ]
                     recovery_message = (
-                        f"{recovery.message}\n"
-                        f"tool_response: "
-                        f"{execution.error}"
+                        f"{tool_call.tool_name} has failed "
+                        f"{failure_count} time(s). "
+                        + (
+                            "Do not call this tool again; choose a different "
+                            "tool only if it can provide useful information. "
+                            "Otherwise, move to the next useful activity or "
+                            "give a partial summary, clearly stating what "
+                            "remains unverified."
+                            if failure_count >= 3
+                            else recovery.message
+                        )
+                        + f"\ntool_response: {execution.error}"
                     )
 
                     self.context.add_tool_message(
@@ -328,13 +394,6 @@ class AgentLoop:
                         tool_name=tool_call.tool_name,
                         tool_call_id=tool_call.call_id,
                     )
-
-                    if not recovery.should_retry:
-                        state.fail(
-                            recovery.message
-                        )
-
-                        return state
 
                     continue
 
@@ -550,9 +609,10 @@ class AgentLoop:
                 state,
                 (
                     "A tool operation is still unresolved. "
-                    "Do not report success or finish; retry it "
-                    "with a corrected approach or report this "
-                    f"failure accurately: {failures}"
+                    "Do not report it as successful. If a different "
+                    "tool or activity can add useful information, use it; "
+                    "otherwise provide a partial summary and clearly state "
+                    f"the unresolved failure: {failures}"
                 ),
             )
             return False
@@ -987,25 +1047,28 @@ class AgentLoop:
                 discovery_call.arguments,
             )
 
-            self.context.add_tool_message(
-                state,
-                content=str(
-                    execution.error
-                    or "Workspace discovery failed."
-                ),
-                tool_name=discovery_call.tool_name,
-                tool_call_id=discovery_call.call_id,
+            state.add_message(
+                Message(
+                    role="system",
+                    content=(
+                        f"Workspace discovery failed using "
+                        f"{discovery_call.tool_name}: "
+                        f"{execution.error or 'Unknown error.'}"
+                    ),
+                )
             )
 
             return False
 
-        self.context.add_tool_message(
-            state,
-            content=str(
-                execution.result
-            ),
-            tool_name=discovery_call.tool_name,
-            tool_call_id=discovery_call.call_id,
+        state.add_message(
+            Message(
+                role="system",
+                content=(
+                    f"Workspace discovery using "
+                    f"{discovery_call.tool_name} returned:\n"
+                    f"{execution.result}"
+                ),
+            )
         )
 
         state.mark_workspace_discovered()
@@ -1458,6 +1521,23 @@ class AgentLoop:
             f"{execution.tool_name} failed. "
             "The agent cannot report a successful result.\n"
             f"{details}"
+        )
+
+    @staticmethod
+    def _format_partial_summary(
+        answer: str,
+        failure: str,
+    ) -> str:
+        summary = (
+            answer.strip()
+            or "No additional verified information was obtained."
+        )
+        return (
+            "Partial summary (not verified):\n"
+            f"{summary}\n\n"
+            "Unresolved operation:\n"
+            f"{failure}\n\n"
+            "The requested result was not confirmed."
         )
 
     # =============================================================

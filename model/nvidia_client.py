@@ -46,6 +46,7 @@ class NVIDIAClient:
 
         if tools:
             payload["tools"] = tools
+            payload["parallel_tool_calls"] = False
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",

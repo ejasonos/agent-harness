@@ -228,8 +228,12 @@ def test_failed_verification_result_keeps_verification_pending():
 
 def test_tool_call_batch_finishes_before_verification():
     tool_policies = {
-        "write_file": ToolPolicy(verify_after=True),
+        "write_file": ToolPolicy(
+            prerequisites=["workspace_discovered"],
+            verify_after=True,
+        ),
         "run_tests": ToolPolicy(),
+        "directory_tree": ToolPolicy(),
     }
     registry = SimpleNamespace(
         discover=lambda: [],
@@ -288,6 +292,7 @@ def test_tool_call_batch_finishes_before_verification():
     def evaluate(state, tool_execution=None):
         if tool_execution.tool_name == "write_file":
             assert execution_order == [
+                "directory_tree",
                 "write_file",
                 "write_file",
                 "write_file",
@@ -309,6 +314,7 @@ def test_tool_call_batch_finishes_before_verification():
 
     assert state.completed
     assert execution_order == [
+        "directory_tree",
         "write_file",
         "write_file",
         "write_file",
@@ -316,6 +322,22 @@ def test_tool_call_batch_finishes_before_verification():
     ]
     assert state.verification_pending is False
     assert state.metadata.get("verification_targets") is None
+    assistant_tool_calls = [
+        message.tool_calls
+        for message in state.messages
+        if message.role == "assistant" and message.tool_calls
+    ]
+    assert all(len(tool_calls) == 1 for tool_calls in assistant_tool_calls)
+    call_ids = {
+        tool_call.call_id
+        for tool_calls in assistant_tool_calls
+        for tool_call in tool_calls
+    }
+    assert all(
+        message.tool_call_id in call_ids
+        for message in state.messages
+        if message.role == "tool"
+    )
 
 
 def test_final_synthesis_receives_tool_results():

@@ -4,8 +4,8 @@ from unittest.mock import Mock
 from agent.context import ContextManager
 from agent.evaluator import NextAction
 from agent.loop import AgentLoop
-from agent.state import AgentState
-from mcp_client.schemas import MCPToolResult
+from agent.state import AgentState, ToolExecution
+from mcp_client.schemas import MCPTool, MCPToolResult, ToolPolicy
 from model.messages import ModelResponse, ToolCall
 from workspace.manager import WorkspaceManager
 
@@ -41,7 +41,7 @@ def test_application_failure_overrides_mcp_transport_success():
     assert "not a git repository" in execution.error
 
 
-def test_agent_does_not_finalize_after_last_tool_failure():
+def test_agent_returns_caveated_summary_after_unresolved_tool_failure():
     registry = SimpleNamespace(
         discover=lambda: [],
         to_openai_tools=lambda: [],
@@ -92,9 +92,105 @@ def test_agent_does_not_finalize_after_last_tool_failure():
     state = loop.run("Show me the output of git status")
 
     assert state.completed is True
-    assert state.final_answer is None
-    assert "not a git repository" in state.error
+    assert state.final_answer is not None
+    assert "Partial summary (not verified)" in state.final_answer
+    assert "not a git repository" in state.final_answer
+    assert "requested result was not confirmed" in state.final_answer
     loop.evaluator.evaluate.assert_not_called()
+
+
+def test_context_warns_against_repeating_tool_with_different_arguments():
+    context = ContextManager()
+    state = AgentState(task="inspect the workspace")
+    state.tool_failure_counts["directory_tree"] = 3
+
+    message = context.build_messages(state)[0]
+
+    assert "directory_tree" in message.content
+    assert "must not be called again" in message.content
+    assert "partial summary" in message.content
+
+
+def test_failed_tool_is_removed_after_three_calls_with_different_arguments():
+    tool_schema = {
+        "type": "function",
+        "function": {
+            "name": "directory_tree",
+            "parameters": {"type": "object"},
+        },
+    }
+    registry = SimpleNamespace(
+        discover=lambda: [],
+        to_openai_tools=lambda: [tool_schema],
+        get=lambda name: MCPTool(
+            name=name,
+            policy=ToolPolicy(),
+        ),
+    )
+    loop = AgentLoop(
+        model=object(),
+        mcp_client=object(),
+        registry=registry,
+        workspace=WorkspaceManager("."),
+    )
+    observed_tools = []
+    plan_count = 0
+
+    def plan_with_repeated_failure(state, tools=None):
+        nonlocal plan_count
+        plan_count += 1
+        observed_tools.append(tools)
+        if plan_count <= 3:
+            return SimpleNamespace(
+                response=ModelResponse(
+                    tool_calls=[
+                        ToolCall(
+                            tool_name="directory_tree",
+                            arguments={"path": str(plan_count)},
+                        )
+                    ]
+                )
+            )
+        return SimpleNamespace(
+            response=ModelResponse(content="Partial findings")
+        )
+
+    loop.planner.plan = Mock(side_effect=plan_with_repeated_failure)
+    loop._execute_tool = Mock(
+        side_effect=lambda _state, call: ToolExecution(
+            tool_name=call.tool_name,
+            arguments=call.arguments,
+            error="directory unavailable",
+        )
+    )
+    loop.evaluator.evaluate = Mock(
+        side_effect=[
+            *[
+                SimpleNamespace(
+                    next_action=NextAction.INVESTIGATE,
+                    goal_complete=False,
+                    evidence_sufficient=False,
+                    task_complete=False,
+                    reason="Try another useful action",
+                )
+                for _ in range(3)
+            ],
+            SimpleNamespace(
+                next_action=NextAction.FINISH,
+                goal_complete=False,
+                evidence_sufficient=False,
+                task_complete=False,
+                reason="Partial findings",
+            ),
+        ]
+    )
+
+    state = loop.run("inspect the workspace")
+
+    assert loop._execute_tool.call_count == 3
+    assert observed_tools[:3] == [[tool_schema], [tool_schema], [tool_schema]]
+    assert observed_tools[3] == []
+    assert state.tool_failure_counts["directory_tree"] == 3
 
 
 def test_evaluator_cannot_finish_with_unresolved_tool_failure():

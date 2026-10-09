@@ -57,6 +57,9 @@ The task should be completed in this order:
 1. Create a folder named poem_folder
 2. Create three different poem.txt files in the poem_folder
 3. Write unique poems in each of the files, two stanzas following the theme provided in the task description.
+4. After completing the task, provide a final answer summarizing what you have done.
+5. Search about Ronaldo and Portugal reef that is ongoing.
+6. Name all the current forbes richest people and their net worth.
 
 Don't stop till you are done with the task
 """
