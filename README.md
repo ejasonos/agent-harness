@@ -21,13 +21,16 @@ If PowerShell blocks activation, use `\.venv\Scripts\python.exe` in place of `py
 
 ### 2. Configure a model
 
-The default provider is Ollama, using `gemma4:e4b` at `http://127.0.0.1:11434`. Install and start Ollama separately, then make sure that model is available:
+The default provider is Ollama, using `gemma4:e4b` at `http://127.0.0.1:11434`. Install Ollama for Windows from [ollama.com/download](https://ollama.com/download/windows), then open a new terminal and download the configured model:
 
 ```powershell
 ollama pull gemma4:e4b
+ollama list
 ```
 
-Alternatively, configure `NVIDIA_API_KEY` and construct an `NVIDIAClient` in your Python program. The default NVIDIA model is `meta/llama-3.2-11b-vision-instruct`.
+The Ollama desktop app normally starts its local service. If the service is not running, start it in a separate terminal with `ollama serve`. Confirm the model responds with `ollama run gemma4:e4b` and exit the model prompt with `/bye`.
+
+The development runner, `test_agent_loop.py`, uses `OllamaClient` and does not require an NVIDIA key. To use NVIDIA instead, configure `NVIDIA_API_KEY` and explicitly construct and pass an `NVIDIAClient`; the default NVIDIA model is `meta/llama-3.2-11b-vision-instruct`.
 
 ### 3. Start the MCP server
 
@@ -87,6 +90,26 @@ if result.error:
 Replace the example task and workspace path with your own. `result.tool_executions` contains each tool's name, reason, arguments, result, and status. To use NVIDIA instead of Ollama, construct `NVIDIAClient` with `settings.nvidia_model`, `settings.nvidia_api_key`, and `settings.nvidia_endpoint`.
 
 The MCP server and agent program must use the same workspace directory. The server uses `AGENT_WORKSPACE` or its current working directory; `load_settings(workspace_path)` configures the agent's local workspace.
+
+### How Ollama Is Wired In
+
+For a local Ollama model, the project already contains the client and configuration path; the agent loop and MCP server do not need provider-specific changes:
+
+- `config/defaults.py` sets the default model name to `gemma4:e4b`.
+- `config/settings.py` reads `OLLAMA_MODEL` and `OLLAMA_HOST` from the environment and supplies those values to the client.
+- `model/ollama_client.py` sends chat requests to Ollama's `/api/chat` endpoint and exposes the available-model health/list checks. It uses the `requests` dependency already in `requirements.txt`; no Ollama Python package is needed.
+- `test_agent_loop.py` constructs `OllamaClient` from those settings and passes it to `AgentLoop`. This is the provider selection point for that runner.
+- `agent/planner.py` calls the provider through the shared `chat()` interface. It can stay unchanged when switching between the Ollama and NVIDIA clients.
+- `fastmcp_tools_http.py` is a separate tools server. It does not call the model and does not need Ollama configuration.
+
+Set these values in the project `.env` file when using a different model or Ollama host:
+
+```dotenv
+OLLAMA_MODEL=gemma4:e4b
+OLLAMA_HOST=http://127.0.0.1:11434
+```
+
+`OLLAMA_HOST` is the Ollama server's base URL, not the `/api/chat` endpoint. `OLLAMA_MODEL` must match a model shown by `ollama list` and should support tool calling if you expect the agent to use MCP tools. After changing `.env`, restart the agent process. Ollama handles local inference; web search is a separate tool and still requires network access and `TAVILY_API_KEY`.
 
 ### Use a different workspace
 
