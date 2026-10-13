@@ -1,0 +1,23 @@
+name: local-agent
+prefect-version: null
+
+build: null
+push: null
+
+pull:
+  - prefect.deployments.steps.git_clone:
+      id: clone
+      repository: "{{ $PREFECT_SOURCE_URL }}"
+      branch: main
+  - prefect.deployments.steps.pip_install_requirements:
+      directory: "{{ clone.directory }}"
+      requirements_file: requirements.txt
+  - prefect.deployments.steps.set_working_directory:
+      directory: "{{ clone.directory }}"
+
+deployments:
+  - name: agent-task
+    entrypoint: prefect_flow.py:run_agent
+    parameters: {}
+    work_pool:
+      name: local-agent-managed

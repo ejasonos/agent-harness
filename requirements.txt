@@ -14,3 +14,4 @@ pyautogui
 openai
 langchain-tavily
 pytest
+prefect>=3,<4

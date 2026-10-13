@@ -221,3 +221,33 @@ python -m pytest -q test/tests
 If the agent cannot connect, confirm the MCP server is running and that `MCP_URL` points to it. If model requests fail, check that Ollama is running with the selected model or that `NVIDIA_API_KEY` is configured.
 
 `test_agent_loop.py` is a development harness with a task defined in the file, not a general command-line interface. It can execute real tools against its configured workspace; review its task and workspace before running it.
+
+## Deploy with Prefect Cloud
+
+`prefect_flow.py` exposes `run_agent(task, workspace_path=None)` as a Prefect flow. Each run creates a new model client, MCP client, tool registry, and agent loop, then returns a compact execution summary. The existing `test_agent_loop.py` remains a local development script.
+
+This deployment definition uses Prefect Managed infrastructure and clones this repository for each flow run. Push the repository to a Git remote, then configure the deployment environment and create the work pool:
+
+```powershell
+python -m pip install -r requirements.txt
+prefect cloud login
+$env:PREFECT_SOURCE_URL = "https://github.com/OWNER/REPOSITORY.git"
+prefect work-pool create local-agent-managed --type prefect:managed
+prefect deploy --name agent-task
+```
+
+For a private Git repository, configure a Prefect GitHub Credentials block and reference it as the `credentials` value in the `git_clone` step in `prefect.yaml`. Configure runtime environment variables in the work pool/deployment, keeping credentials in Prefect secrets:
+
+| Variable | Purpose |
+| --- | --- |
+| `AGENT_WORKSPACE` | Existing workspace directory available to the flow runtime. Defaults to the checked-out repository directory. |
+| `MCP_URL` | HTTP MCP endpoint reachable from the flow runtime. |
+| `MODEL_PROVIDER` | `nvidia` or `ollama`; defaults to `ollama`. |
+| `NVIDIA_API_KEY` | Required when `MODEL_PROVIDER=nvidia`. |
+| `NVIDIA_MODEL` / `NVIDIA_ENDPOINT` | Optional NVIDIA model and API endpoint overrides. |
+| `OLLAMA_HOST` / `OLLAMA_MODEL` | Ollama URL and model; the service must be reachable from the flow runtime. |
+| `TAVILY_API_KEY` | Required when using the Tavily-backed web search tool. |
+
+The MCP tools server is a separate service and must have the target workspace mounted locally. The flow runtime also needs an existing corresponding `AGENT_WORKSPACE` directory with the same relative layout, because it performs path validation before tool calls. For containerized/private-network deployment, configure the MCP server with `MCP_HOST=0.0.0.0` and `MCP_PORT` as needed; keep it behind a private network or authenticated proxy because this server does not provide authentication. Prefect Managed runs do not provide a persistent custom workspace mount, so use a worker/work pool with a mounted workspace when tasks need to modify arbitrary repositories or persist edits.
+
+For unattended runs, set conservative tool permissions such as `ALLOW_DELETE=false`, `ALLOW_GIT_WRITE=false`, and `ALLOW_SHELL=false` unless the task specifically requires them. The current defaults enable deletion and shell execution.
