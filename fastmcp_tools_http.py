@@ -5,6 +5,7 @@ from functools import wraps
 
 from fastmcp import FastMCP
 from dotenv import load_dotenv
+from agent_status import observe
 
 from config.settings import load_settings
 from workspace.manager import WorkspaceManager
@@ -1406,6 +1407,9 @@ def multiply(a: float, b: float) -> dict:
 def division(a: float, b: float) -> dict:
     """Divide a by b."""
     return _division(a, b)
+
+
+observe(mcp, agent_id="02ac04a8-36a1-4928-8b73-dbf71b8ea113")
 
 # =========================================================
 # SERVER
