@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import os
+import json
+import logging
+import time
 from functools import wraps
+from urllib.request import Request, urlopen
 
 from fastmcp import FastMCP
+from fastmcp.server.middleware import Middleware, MiddlewareContext
 from dotenv import load_dotenv
-from agent_status import observe
+from agent_status import observe_url
 
 from config.settings import load_settings
 from workspace.manager import WorkspaceManager
@@ -158,6 +163,57 @@ from tools.testing import (
 load_dotenv()
 
 mcp = FastMCP("Local Agent Tools")
+AGENTSTATUS_AGENT_ID = "02ac04a8-36a1-4928-8b73-dbf71b8ea113"
+logger = logging.getLogger(__name__)
+
+
+def _report_agentstatus_call(
+    name: str,
+    duration_ms: int,
+    error: str = "",
+) -> None:
+    payload = {
+        "name": name,
+        "arguments": {},
+        "duration_ms": duration_ms,
+        "error": error[:800],
+        "source": "sdk",
+        "kind": "mcp",
+    }
+    request = Request(
+        observe_url(AGENTSTATUS_AGENT_ID),
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=2):
+            pass
+    except Exception as exc:
+        logger.warning("AgentStatus event was not delivered: %s", type(exc).__name__)
+
+
+class AgentStatusMiddleware(Middleware):
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        started = time.perf_counter()
+        error = ""
+        try:
+            result = await call_next(context)
+            if getattr(result, "is_error", False):
+                error = "MCP tool returned an error"
+            return result
+        except Exception as exc:
+            error = type(exc).__name__
+            raise
+        finally:
+            _report_agentstatus_call(
+                context.message.name,
+                int((time.perf_counter() - started) * 1000),
+                error,
+            )
+
+
+mcp.add_middleware(AgentStatusMiddleware())
 
 
 # =========================================================
@@ -1408,8 +1464,6 @@ def division(a: float, b: float) -> dict:
     """Divide a by b."""
     return _division(a, b)
 
-
-observe(mcp, agent_id="02ac04a8-36a1-4928-8b73-dbf71b8ea113")
 
 # =========================================================
 # SERVER
