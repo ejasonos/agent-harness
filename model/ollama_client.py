@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+import time
+import uuid
 from typing import Any
 
 import requests
@@ -7,6 +10,7 @@ import requests
 from .messages import Message, ModelResponse
 
 from .parser import ModelParser
+from utils.logging import log_event
 
 
 class OllamaClient:
@@ -62,17 +66,79 @@ class OllamaClient:
         if tools:
             payload["tools"] = tools
 
-        response = requests.post(
-            f"{self.base_url}/api/chat",
-            json=payload,
-            timeout=self.timeout,
+        request_id = uuid.uuid4().hex
+        endpoint = f"{self.base_url}/api/chat"
+        started = time.perf_counter()
+        log_event(
+            "model.request.sent",
+            provider="ollama",
+            request_id=request_id,
+            model=self.model,
+            endpoint=endpoint,
+            message_count=len(payload["messages"]),
+            tool_count=len(tools or []),
+        )
+        log_event(
+            "model.request.payload",
+            level=logging.DEBUG,
+            provider="ollama",
+            request_id=request_id,
+            payload=payload,
         )
 
-        response.raise_for_status()
-
-        data = response.json()
-
-        return self._parse_response(data)
+        try:
+            response = requests.post(
+                endpoint,
+                json=payload,
+                timeout=self.timeout,
+            )
+            duration_ms = round((time.perf_counter() - started) * 1000, 2)
+            log_event(
+                "model.response.received",
+                provider="ollama",
+                request_id=request_id,
+                status_code=response.status_code,
+                duration_ms=duration_ms,
+            )
+            log_event(
+                "model.response.payload",
+                level=logging.DEBUG,
+                provider="ollama",
+                request_id=request_id,
+                payload=response.text,
+            )
+            response.raise_for_status()
+            data = response.json()
+            parsed_response = self._parse_response(data)
+            log_event(
+                "model.response.parsed",
+                provider="ollama",
+                request_id=request_id,
+                content_length=len(parsed_response.content or ""),
+                tool_calls=[call.tool_name for call in parsed_response.tool_calls],
+                finish_reason=parsed_response.finish_reason,
+            )
+            log_event(
+                "model.response.details",
+                level=logging.DEBUG,
+                provider="ollama",
+                request_id=request_id,
+                content=parsed_response.content,
+                tool_calls=[call.to_dict() for call in parsed_response.tool_calls],
+                raw=data,
+            )
+            return parsed_response
+        except Exception as exc:
+            log_event(
+                "model.request.failed",
+                level=logging.ERROR,
+                provider="ollama",
+                request_id=request_id,
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                error=str(exc),
+                exc_info=True,
+            )
+            raise
 
     def _normalize_messages(
         self,

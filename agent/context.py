@@ -132,7 +132,9 @@ class ContextManager:
             sections.append(
                 f"Verification is required after {mutation}. "
                 "Do not finish or make another mutation until "
-                "a verification tool succeeds."
+                "verification succeeds. Use read_file to inspect "
+                "file contents or directory_tree to verify directory "
+                "state, and only call tools in the available tool list."
                 + target_context
             )
 

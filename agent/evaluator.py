@@ -6,6 +6,8 @@ from enum import Enum
 from agent.state import AgentState, ToolExecution
 from model.messages import Message
 from model.ollama_client import OllamaClient
+from utils.logging import log_context, log_event
+from utils.task_journal import record_task_event
 
 
 class NextAction(str, Enum):
@@ -82,35 +84,55 @@ class Evaluator:
             tool_execution=tool_execution,
         )
 
-        response = self.model.chat(
-            messages=[
-                Message(
-                    role="system",
-                    content=(
-                        "You are the evidence and completion evaluator "
-                        "for an AI Agent that performs tasks using its "
-                        "available tools.\n\n"
-                        "Your responsibility is to determine:\n"
-                        "1. whether enough evidence has been gathered,\n"
-                        "2. whether the user's goal is complete, and\n"
-                        "3. which controlled execution phase should happen next.\n\n"
-                        "Do not assume that successful tool execution "
-                        "means the user's goal is complete.\n\n"
-                        "Do not request additional investigation merely "
-                        "because more information could theoretically "
-                        "be obtained."
-                    ),
+        messages = [
+            Message(
+                role="system",
+                content=(
+                    "You are the evidence and completion evaluator "
+                    "for an AI Agent that performs tasks using its "
+                    "available tools.\n\n"
+                    "Your responsibility is to determine:\n"
+                    "1. whether enough evidence has been gathered,\n"
+                    "2. whether the user's goal is complete, and\n"
+                    "3. which controlled execution phase should happen next.\n\n"
+                    "Do not assume that successful tool execution "
+                    "means the user's goal is complete.\n\n"
+                    "Do not request additional investigation merely "
+                    "because more information could theoretically "
+                    "be obtained."
                 ),
-                Message(
-                    role="user",
-                    content=prompt,
-                ),
-            ],
+            ),
+            Message(
+                role="user",
+                content=prompt,
+            ),
+        ]
+        log_event(
+            "agent.evaluator.requested",
+            message_count=len(messages),
+            has_tool_execution=tool_execution is not None,
+        )
+        with log_context(model_purpose="evaluator"):
+            response = self.model.chat(messages=messages)
+        record_task_event(
+            "model_response",
+            source="evaluator",
+            content=response.content or "",
+            raw=response.raw,
         )
 
-        return self._parse_response(
+        evaluation = self._parse_response(
             response.content,
         )
+        log_event(
+            "agent.evaluator.responded",
+            evidence_sufficient=evaluation.evidence_sufficient,
+            task_complete=evaluation.task_complete,
+            goal_complete=evaluation.goal_complete,
+            next_action=evaluation.next_action.value,
+            reason=evaluation.reason,
+        )
+        return evaluation
 
     def _build_prompt(
         self,

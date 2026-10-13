@@ -51,6 +51,11 @@ def test_nvidia_normalizes_completed_tool_batch_as_single_call_turns():
 
 
 def test_nvidia_chat_disables_parallel_tool_calls(monkeypatch):
+    events = []
+    monkeypatch.setattr(
+        "model.nvidia_client.log_event",
+        lambda event, **fields: events.append((event, fields)),
+    )
     response = Mock(ok=True)
     response.json.return_value = {
         "choices": [
@@ -77,3 +82,11 @@ def test_nvidia_chat_disables_parallel_tool_calls(monkeypatch):
 
     payload = post.call_args.kwargs["json"]
     assert payload["parallel_tool_calls"] is False
+    assert [event for event, _fields in events] == [
+        "model.request.sent",
+        "model.request.payload",
+        "model.response.received",
+        "model.response.payload",
+        "model.response.parsed",
+        "model.response.details",
+    ]

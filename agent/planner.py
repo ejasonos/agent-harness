@@ -7,6 +7,7 @@ from agent.context import ContextManager
 from agent.state import AgentState
 from model.messages import ModelResponse
 from model.ollama_client import OllamaClient
+from utils.logging import log_context, log_event
 
 
 @dataclass
@@ -50,9 +51,20 @@ class Planner:
 
         messages = self.context.build_messages(state)
 
-        response = self.model.chat(
-            messages=messages,
-            tools=tools,
+        log_event(
+            "agent.planner.requested",
+            message_count=len(messages),
+            tool_count=len(tools or []),
+        )
+        with log_context(model_purpose="planner"):
+            response = self.model.chat(
+                messages=messages,
+                tools=tools,
+            )
+        log_event(
+            "agent.planner.responded",
+            content_length=len(response.content or ""),
+            tool_calls=[call.tool_name for call in response.tool_calls],
         )
 
         return Plan(

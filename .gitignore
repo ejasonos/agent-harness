@@ -8,3 +8,5 @@ package-lock.json
 node_modules/*
 .git
 .next
+__pycache__/*
+__pycache__

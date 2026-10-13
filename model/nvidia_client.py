@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
+import time
+import uuid
 from typing import Any
 
 import requests
 
 from .messages import Message, ModelResponse
 from .parser import ModelParser
+from utils.logging import log_event
 
 
 class NVIDIAClient:
@@ -54,27 +58,80 @@ class NVIDIAClient:
             "Accept": "application/json",
         }
 
-        response = requests.post(
-            f"{self.base_url}/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=self.timeout,
+        request_id = uuid.uuid4().hex
+        endpoint = f"{self.base_url}/chat/completions"
+        started = time.perf_counter()
+        log_event(
+            "model.request.sent",
+            provider="nvidia",
+            request_id=request_id,
+            model=self.model,
+            endpoint=endpoint,
+            message_count=len(payload["messages"]),
+            tool_count=len(tools or []),
+        )
+        log_event(
+            "model.request.payload",
+            level=logging.DEBUG,
+            provider="nvidia",
+            request_id=request_id,
+            payload=payload,
         )
 
-        if not response.ok:
-            print("\nNVIDIA API ERROR")
-            print("Status:", response.status_code)
-            print("Model:", self.model)
-            print("URL:", f"{self.base_url}/chat/completions")
-            print("Tool count:", len(tools or []))
-            print("Response:", response.text)
-            print("Payload:")
-            print(payload)
+        try:
+            response = requests.post(
+                endpoint,
+                headers=headers,
+                json=payload,
+                timeout=self.timeout,
+            )
+            duration_ms = round((time.perf_counter() - started) * 1000, 2)
+            log_event(
+                "model.response.received",
+                provider="nvidia",
+                request_id=request_id,
+                status_code=response.status_code,
+                duration_ms=duration_ms,
+            )
+            log_event(
+                "model.response.payload",
+                level=logging.DEBUG,
+                provider="nvidia",
+                request_id=request_id,
+                payload=response.text,
+            )
             response.raise_for_status()
-
-        data = response.json()
-
-        return self._parse_response(data)
+            data = response.json()
+            parsed_response = self._parse_response(data)
+            log_event(
+                "model.response.parsed",
+                provider="nvidia",
+                request_id=request_id,
+                content_length=len(parsed_response.content or ""),
+                tool_calls=[call.tool_name for call in parsed_response.tool_calls],
+                finish_reason=parsed_response.finish_reason,
+            )
+            log_event(
+                "model.response.details",
+                level=logging.DEBUG,
+                provider="nvidia",
+                request_id=request_id,
+                content=parsed_response.content,
+                tool_calls=[call.to_dict() for call in parsed_response.tool_calls],
+                raw=data,
+            )
+            return parsed_response
+        except Exception as exc:
+            log_event(
+                "model.request.failed",
+                level=logging.ERROR,
+                provider="nvidia",
+                request_id=request_id,
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                error=str(exc),
+                exc_info=True,
+            )
+            raise
 
     def _normalize_messages(
         self,

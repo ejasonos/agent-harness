@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 from model.messages import Message, ToolCall
+from utils.task_journal import record_task_event
 
 
 @dataclass
@@ -104,6 +105,16 @@ class AgentState:
         execution: ToolExecution,
     ) -> None:
         self.tool_executions.append(execution)
+        record_task_event(
+            "tool_result",
+            tool_name=execution.tool_name,
+            arguments=getattr(execution, "arguments", {}),
+            success=execution.success,
+            result=execution.result,
+            error=execution.error,
+            duration_ms=getattr(execution, "duration_ms", None),
+            reason_for_tool=getattr(execution, "reason_for_tool", ""),
+        )
 
     # -------------------------------------------------------------
     # ITERATION STATE

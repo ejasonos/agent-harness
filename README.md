@@ -139,6 +139,10 @@ NVIDIA_MODEL=meta/llama-3.2-11b-vision-instruct
 # Required for web_search
 TAVILY_API_KEY=your-tavily-key
 
+# Structured agent/model/MCP trace output
+LOG_LEVEL=DEBUG
+LOG_FILE=logs/agent.jsonl
+
 # Tool permissions
 ALLOW_DELETE=true
 ALLOW_GIT_WRITE=false
@@ -164,10 +168,16 @@ Available runtime settings include:
 | `ALLOW_NETWORK` | `true` | Enables network-dependent tools. |
 | `MAX_ITERATIONS` | `30` | Maximum agent planning iterations. |
 | `MAX_TOOL_CALLS` | `100` | Maximum tool calls per run. |
+| `LOG_LEVEL` | `INFO` | Log verbosity; use `DEBUG` for full model and MCP payloads. |
+| `LOG_FILE` | Unset | Optional rotating JSON-lines log file (10 MB, three backups). |
 | `COMMAND_TIMEOUT` | `120` seconds | Default command timeout. |
 | `TOOL_TIMEOUT` | `120` seconds | Default MCP request timeout. |
 
+Logs are structured JSON events. DEBUG payload events can include prompts, model responses, tool arguments, and workspace data; protect log files accordingly. Credential-like fields such as API keys, authorization values, passwords, and tokens are redacted by key name.
+
 Boolean settings accept `1`, `true`, `yes`, or `on` as enabled. Any other explicit value disables the setting. Restart the relevant process after changing its environment or `.env` values.
+
+Each agent run writes planner/evaluator responses and tool results to a temporary JSONL task journal. After a tool failure, newly recorded journal entries are fed back into the agent; final synthesis rereads the full journal so earlier answers and successful results are retained. The temporary file is deleted when `AgentLoop.run()` returns. `LOG_FILE` is a separate, optional diagnostic log.
 
 ## Workspace Safety
 

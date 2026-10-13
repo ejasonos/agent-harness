@@ -47,8 +47,18 @@ def test_agent_returns_caveated_summary_after_unresolved_tool_failure():
         to_openai_tools=lambda: [],
         get=lambda _name: object(),
     )
+    model = SimpleNamespace(
+        chat=Mock(
+            return_value=ModelResponse(
+                content=(
+                    "The workspace is clean, but the requested command "
+                    "failed: fatal: not a git repository."
+                )
+            )
+        )
+    )
     loop = AgentLoop(
-        model=object(),
+        model=model,
         mcp_client=object(),
         registry=registry,
         workspace=WorkspaceManager("."),
@@ -93,9 +103,12 @@ def test_agent_returns_caveated_summary_after_unresolved_tool_failure():
 
     assert state.completed is True
     assert state.final_answer is not None
-    assert "Partial summary (not verified)" in state.final_answer
+    assert "workspace is clean" in state.final_answer
     assert "not a git repository" in state.final_answer
-    assert "requested result was not confirmed" in state.final_answer
+    synthesis_prompt = model.chat.call_args.kwargs["messages"][1].content
+    assert "On branch main; working tree clean" in synthesis_prompt
+    assert "some unrelated successful output" in synthesis_prompt
+    assert "TEMPORARY TASK JOURNAL" in synthesis_prompt
     loop.evaluator.evaluate.assert_not_called()
 
 
@@ -127,8 +140,15 @@ def test_failed_tool_is_removed_after_three_calls_with_different_arguments():
             policy=ToolPolicy(),
         ),
     )
+    model = SimpleNamespace(
+        chat=Mock(
+            return_value=ModelResponse(
+                content="Partial findings from the successful checks."
+            )
+        )
+    )
     loop = AgentLoop(
-        model=object(),
+        model=model,
         mcp_client=object(),
         registry=registry,
         workspace=WorkspaceManager("."),
@@ -191,6 +211,7 @@ def test_failed_tool_is_removed_after_three_calls_with_different_arguments():
     assert observed_tools[:3] == [[tool_schema], [tool_schema], [tool_schema]]
     assert observed_tools[3] == []
     assert state.tool_failure_counts["directory_tree"] == 3
+    assert "Partial findings" in state.final_answer
 
 
 def test_evaluator_cannot_finish_with_unresolved_tool_failure():

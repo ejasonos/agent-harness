@@ -203,6 +203,14 @@ def test_pending_verification_blocks_completion_and_other_tools():
         state,
         ToolCall(tool_name="run_tests", arguments={}),
     ) is None
+    assert loop._check_tool_policy(
+        state,
+        ToolCall(tool_name="read_file", arguments={"path": "README.md"}),
+    ) is None
+    assert loop._check_tool_policy(
+        state,
+        ToolCall(tool_name="directory_tree", arguments={}),
+    ) is None
 
 
 def test_failed_verification_result_keeps_verification_pending():
@@ -274,6 +282,13 @@ def test_tool_call_batch_finishes_before_verification():
     loop.registry = registry
     loop.workspace = WorkspaceManager(".")
     loop.context = ContextManager()
+    loop.model = SimpleNamespace(
+        chat=Mock(
+            return_value=ModelResponse(
+                content="Three poems were created and verified."
+            )
+        )
+    )
     loop.recovery = Mock()
     loop.planner = SimpleNamespace(
         plan=lambda _state, tools: next(plans),
@@ -313,6 +328,7 @@ def test_tool_call_batch_finishes_before_verification():
     state = loop.run("Create three poems")
 
     assert state.completed
+    assert state.final_answer == "Three poems were created and verified."
     assert execution_order == [
         "directory_tree",
         "write_file",

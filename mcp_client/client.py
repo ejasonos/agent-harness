@@ -14,13 +14,16 @@ Responsibilities:
 from __future__ import annotations
 
 import json
+import logging
 import threading
+import time
 from typing import Any
 
 import requests
 
 from config.settings import AgentSettings
 from .schemas import MCPToolResult
+from utils.logging import log_event
 
 
 class MCPError(RuntimeError):
@@ -82,6 +85,24 @@ class MCPClient:
             headers["mcp-session-id"] = self.session_id
 
         timeout = timeout or self.settings.tool_timeout
+        started = time.perf_counter()
+        method = payload.get("method", "unknown")
+        request_id = payload.get("id")
+        params = payload.get("params", {})
+        log_event(
+            "mcp.request.sent",
+            request_id=request_id,
+            method=method,
+            tool_name=params.get("name") if isinstance(params, dict) else None,
+            url=self.url,
+            timeout=timeout,
+        )
+        log_event(
+            "mcp.request.payload",
+            level=logging.DEBUG,
+            request_id=request_id,
+            payload=payload,
+        )
 
         try:
             response = self.http.post(
@@ -92,6 +113,15 @@ class MCPClient:
             )
 
         except requests.RequestException as exc:
+            log_event(
+                "mcp.request.failed",
+                level=logging.ERROR,
+                request_id=request_id,
+                method=method,
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                error=str(exc),
+                exc_info=True,
+            )
             raise MCPError(
                 f"Unable to connect to MCP server: {exc}"
             ) from exc
@@ -105,12 +135,49 @@ class MCPClient:
             self.session_id = session_id
 
         if response.status_code >= 400:
+            log_event(
+                "mcp.response.error",
+                level=logging.ERROR,
+                request_id=request_id,
+                method=method,
+                status_code=response.status_code,
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                body=response.text,
+            )
             raise MCPError(
                 f"MCP HTTP {response.status_code}: "
                 f"{response.text[:2000]}"
             )
 
-        return self._parse_response(response)
+        try:
+            parsed_response = self._parse_response(response)
+        except Exception as exc:
+            log_event(
+                "mcp.response.parse_failed",
+                level=logging.ERROR,
+                request_id=request_id,
+                method=method,
+                status_code=response.status_code,
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                error=str(exc),
+                exc_info=True,
+            )
+            raise
+        log_event(
+            "mcp.response.received",
+            request_id=request_id,
+            method=method,
+            status_code=response.status_code,
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+        log_event(
+            "mcp.response.payload",
+            level=logging.DEBUG,
+            request_id=request_id,
+            method=method,
+            payload=parsed_response,
+        )
+        return parsed_response
 
     # ------------------------------------------------------------------
     # Response parsing
