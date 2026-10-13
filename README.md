@@ -251,3 +251,7 @@ For a private Git repository, configure a Prefect GitHub Credentials block and r
 The MCP tools server is a separate service and must have the target workspace mounted locally. The flow runtime also needs an existing corresponding `AGENT_WORKSPACE` directory with the same relative layout, because it performs path validation before tool calls. For containerized/private-network deployment, configure the MCP server with `MCP_HOST=0.0.0.0` and `MCP_PORT` as needed; keep it behind a private network or authenticated proxy because this server does not provide authentication. Prefect Managed runs do not provide a persistent custom workspace mount, so use a worker/work pool with a mounted workspace when tasks need to modify arbitrary repositories or persist edits.
 
 For unattended runs, set conservative tool permissions such as `ALLOW_DELETE=false`, `ALLOW_GIT_WRITE=false`, and `ALLOW_SHELL=false` unless the task specifically requires them. The current defaults enable deletion and shell execution.
+
+### FastMCP Server Hosting
+
+If the hosting platform runs `fastmcp inspect` to build an MCP server, use `server.py:mcp` as its entry point. This re-exports the existing FastMCP instance from `fastmcp_tools_http.py`; it is not a Prefect flow. The Prefect deployment entry point remains `prefect_flow.py:run_agent` and must be deployed through Prefect.
