@@ -255,3 +255,9 @@ For unattended runs, set conservative tool permissions such as `ALLOW_DELETE=fal
 ### FastMCP Server Hosting
 
 If the hosting platform runs `fastmcp inspect` to build an MCP server, use `server.py:mcp` as its entry point. This re-exports the existing FastMCP instance from `fastmcp_tools_http.py`; it is not a Prefect flow. The Prefect deployment entry point remains `prefect_flow.py:run_agent` and must be deployed through Prefect.
+
+### Vercel Hosting
+
+`app.py` exposes the full FastMCP server as a stateless ASGI application for Vercel's Python Functions. Connect AgentStatus to `https://<your-vercel-domain>/mcp` and set its monitor authentication to `None`. In Vercel project settings, ensure Deployment Protection does not require login for the production endpoint. Vercel automatically detects `app.py` as the Python ASGI entry point and installs `requirements.txt`.
+
+This publishes the complete tool set without authentication, including shell execution and filesystem write/delete operations. Any internet user who can reach the endpoint can invoke them; there is no way to limit access to "legitimate users" when the endpoint has no authentication. The Vercel workspace is deployment-local and ephemeral: file changes are not a durable shared workspace, and browser/process state is not guaranteed between requests. Function time limits also apply. Do not add API keys or other secrets to Vercel environment variables for this public deployment. Use a persistent container host with authentication for real workspace edits and long-running tasks.
