@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 from fastmcp import FastMCP
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from dotenv import load_dotenv
-from agent_status import observe_url
+# from agent_status import observe_url
 
 from config.settings import load_settings
 from workspace.manager import WorkspaceManager
@@ -163,7 +163,7 @@ from tools.testing import (
 load_dotenv()
 
 mcp = FastMCP("Local Agent Tools")
-AGENTSTATUS_AGENT_ID = "02ac04a8-36a1-4928-8b73-dbf71b8ea113"
+AGENTSTATUS_URL = os.getenv("AGENTSTATUS_URL")
 logger = logging.getLogger(__name__)
 
 
@@ -172,6 +172,9 @@ def _report_agentstatus_call(
     duration_ms: int,
     error: str = "",
 ) -> None:
+    if not AGENTSTATUS_URL:
+        return
+
     payload = {
         "name": name,
         "arguments": {},
@@ -180,13 +183,13 @@ def _report_agentstatus_call(
         "source": "sdk",
         "kind": "mcp",
     }
-    request = Request(
-        observe_url(AGENTSTATUS_AGENT_ID),
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
     try:
+        request = Request(
+            AGENTSTATUS_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         with urlopen(request, timeout=2):
             pass
     except Exception as exc:

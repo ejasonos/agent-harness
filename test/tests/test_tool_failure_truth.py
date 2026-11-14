@@ -3,7 +3,7 @@ from unittest.mock import Mock
 
 from agent.context import ContextManager
 from agent.evaluator import NextAction
-from agent.loop import AgentLoop
+from agent.loop import AgentLoop, AgentLoopConfig
 from agent.state import AgentState, ToolExecution
 from mcp_client.schemas import MCPTool, MCPToolResult, ToolPolicy
 from model.messages import ModelResponse, ToolCall
@@ -62,6 +62,7 @@ def test_agent_returns_caveated_summary_after_unresolved_tool_failure():
         mcp_client=object(),
         registry=registry,
         workspace=WorkspaceManager("."),
+        config=AgentLoopConfig(enable_subagents=False),
     )
     failure = SimpleNamespace(
         tool_name="execute_command",
@@ -117,7 +118,11 @@ def test_context_warns_against_repeating_tool_with_different_arguments():
     state = AgentState(task="inspect the workspace")
     state.tool_failure_counts["directory_tree"] = 3
 
-    message = context.build_messages(state)[0]
+    message = next(
+        message
+        for message in context.build_messages(state)
+        if "directory_tree" in message.content
+    )
 
     assert "directory_tree" in message.content
     assert "must not be called again" in message.content
@@ -152,6 +157,7 @@ def test_failed_tool_is_removed_after_three_calls_with_different_arguments():
         mcp_client=object(),
         registry=registry,
         workspace=WorkspaceManager("."),
+        config=AgentLoopConfig(enable_subagents=False),
     )
     observed_tools = []
     plan_count = 0
@@ -196,7 +202,7 @@ def test_failed_tool_is_removed_after_three_calls_with_different_arguments():
                 for _ in range(3)
             ],
             SimpleNamespace(
-                next_action=NextAction.FINISH,
+                next_action=NextAction.SYNTHESIZE,
                 goal_complete=False,
                 evidence_sufficient=False,
                 task_complete=False,

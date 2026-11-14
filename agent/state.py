@@ -47,6 +47,22 @@ class AgentState:
 
     iteration: int = 0
 
+    model_call_count: int = 0
+
+    model_usage: dict[str, int | float] = field(
+        default_factory=lambda: {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+    )
+
+    model_duration_ms: float = 0.0
+
+    estimated_model_cost_usd: float | None = None
+
+    run_duration_ms: float | None = None
+
     completed: bool = False
 
     verification_pending: bool = False
@@ -122,6 +138,40 @@ class AgentState:
 
     def next_iteration(self) -> None:
         self.iteration += 1
+
+    def record_model_call(
+        self,
+        usage: dict[str, int | float] | None = None,
+        *,
+        input_cost_per_million_tokens: float | None = None,
+        output_cost_per_million_tokens: float | None = None,
+    ) -> None:
+        usage = usage or {}
+        self.model_call_count += 1
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            value = usage.get(key, 0)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                self.model_usage[key] += value
+        duration_ms = usage.get("request_duration_ms", 0)
+        if isinstance(duration_ms, (int, float)) and not isinstance(duration_ms, bool):
+            self.model_duration_ms += duration_ms
+
+        prompt_tokens = usage.get("prompt_tokens")
+        completion_tokens = usage.get("completion_tokens")
+        if (
+            input_cost_per_million_tokens is not None
+            and output_cost_per_million_tokens is not None
+            and isinstance(prompt_tokens, (int, float))
+            and not isinstance(prompt_tokens, bool)
+            and isinstance(completion_tokens, (int, float))
+            and not isinstance(completion_tokens, bool)
+        ):
+            if self.estimated_model_cost_usd is None:
+                self.estimated_model_cost_usd = 0.0
+            self.estimated_model_cost_usd += (
+                prompt_tokens * input_cost_per_million_tokens
+                + completion_tokens * output_cost_per_million_tokens
+            ) / 1_000_000
 
     # -------------------------------------------------------------
     # COMPLETION STATE

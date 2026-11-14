@@ -22,7 +22,9 @@ _LOG_CONTEXT: ContextVar[dict[str, Any]] = ContextVar(
 )
 _CONFIG_LOCK = threading.Lock()
 _SENSITIVE_KEY = re.compile(
-	r"api[_-]?key|authorization|cookie|credential|password|secret|token",
+	r"api[_-]?key|authorization|cookie|credential|password|secret|"
+	r"access[_-]?token|refresh[_-]?token|bearer[_-]?token|"
+	r"(?:^|[_-])token(?:$|[_-](?:value|secret))",
 	re.IGNORECASE,
 )
 
@@ -72,6 +74,15 @@ def new_run_id() -> str:
 	return uuid.uuid4().hex
 
 
+def log_payloads_enabled() -> bool:
+	return os.getenv("LOG_PAYLOADS", "false").strip().lower() in {
+		"1",
+		"true",
+		"yes",
+		"on",
+	}
+
+
 @contextmanager
 def log_context(**fields: Any) -> Iterator[None]:
 	updated_context = {
@@ -113,7 +124,9 @@ def _redact(value: Any) -> Any:
 	if isinstance(value, dict):
 		return {
 			key: (
-				"[REDACTED]"
+				_redact(item)
+				if _SENSITIVE_KEY.search(str(key)) and isinstance(item, dict)
+				else "[REDACTED]"
 				if _SENSITIVE_KEY.search(str(key))
 				else _redact(item)
 			)

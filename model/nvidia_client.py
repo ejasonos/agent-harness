@@ -9,7 +9,7 @@ import requests
 
 from .messages import Message, ModelResponse
 from .parser import ModelParser
-from utils.logging import log_event
+from utils.logging import log_event, log_payloads_enabled
 
 
 class NVIDIAClient:
@@ -70,13 +70,14 @@ class NVIDIAClient:
             message_count=len(payload["messages"]),
             tool_count=len(tools or []),
         )
-        log_event(
-            "model.request.payload",
-            level=logging.DEBUG,
-            provider="nvidia",
-            request_id=request_id,
-            payload=payload,
-        )
+        if log_payloads_enabled():
+            log_event(
+                "model.request.payload",
+                level=logging.DEBUG,
+                provider="nvidia",
+                request_id=request_id,
+                payload=payload,
+            )
 
         try:
             response = requests.post(
@@ -93,16 +94,18 @@ class NVIDIAClient:
                 status_code=response.status_code,
                 duration_ms=duration_ms,
             )
-            log_event(
-                "model.response.payload",
-                level=logging.DEBUG,
-                provider="nvidia",
-                request_id=request_id,
-                payload=response.text,
-            )
+            if log_payloads_enabled():
+                log_event(
+                    "model.response.payload",
+                    level=logging.DEBUG,
+                    provider="nvidia",
+                    request_id=request_id,
+                    payload=response.text,
+                )
             response.raise_for_status()
             data = response.json()
             parsed_response = self._parse_response(data)
+            parsed_response.usage["request_duration_ms"] = duration_ms
             log_event(
                 "model.response.parsed",
                 provider="nvidia",
@@ -110,16 +113,18 @@ class NVIDIAClient:
                 content_length=len(parsed_response.content or ""),
                 tool_calls=[call.tool_name for call in parsed_response.tool_calls],
                 finish_reason=parsed_response.finish_reason,
+                usage=parsed_response.usage,
             )
-            log_event(
-                "model.response.details",
-                level=logging.DEBUG,
-                provider="nvidia",
-                request_id=request_id,
-                content=parsed_response.content,
-                tool_calls=[call.to_dict() for call in parsed_response.tool_calls],
-                raw=data,
-            )
+            if log_payloads_enabled():
+                log_event(
+                    "model.response.details",
+                    level=logging.DEBUG,
+                    provider="nvidia",
+                    request_id=request_id,
+                    content=parsed_response.content,
+                    tool_calls=[call.to_dict() for call in parsed_response.tool_calls],
+                    raw=data,
+                )
             return parsed_response
         except Exception as exc:
             log_event(

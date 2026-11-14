@@ -38,6 +38,7 @@ def run_agent(task: str, workspace_path: str | None = None) -> dict[str, Any]:
             base_url=settings.ollama_host,
             timeout=600,
         )
+        model.ensure_model_available()
     else:
         raise ValueError("MODEL_PROVIDER must be 'nvidia' or 'ollama'.")
 
@@ -58,6 +59,19 @@ def run_agent(task: str, workspace_path: str | None = None) -> dict[str, Any]:
         config=AgentLoopConfig(
             max_iterations=settings.max_iterations,
             max_tool_calls=settings.max_tool_calls,
+            max_context_messages=settings.max_context_messages,
+            max_context_tokens=settings.max_context_tokens,
+            model_input_cost_per_million_tokens=(
+                settings.model_input_cost_per_million_tokens
+            ),
+            model_output_cost_per_million_tokens=(
+                settings.model_output_cost_per_million_tokens
+            ),
+            enable_subagents=settings.enable_subagents,
+            max_subagents_per_run=settings.max_subagents_per_run,
+            max_subagent_iterations=settings.max_subagent_iterations,
+            max_subagent_tool_calls=settings.max_subagent_tool_calls,
+            max_subagent_task_chars=settings.max_subagent_task_chars,
         ),
     )
 
@@ -74,6 +88,16 @@ def run_agent(task: str, workspace_path: str | None = None) -> dict[str, Any]:
         "completed": state.completed,
         "iterations": state.iteration,
         "tool_execution_count": len(state.tool_executions),
+        "subagent_tool_execution_count": state.metadata.get(
+            "subagent_tool_execution_count",
+            0,
+        ),
+        "subagent_count": len(state.metadata.get("delegated_tasks", [])),
+        "model_call_count": state.model_call_count,
+        "model_usage": state.model_usage,
+        "model_duration_ms": state.model_duration_ms,
+        "estimated_model_cost_usd": state.estimated_model_cost_usd,
+        "run_duration_ms": state.run_duration_ms,
         "tool_executions": [
             {
                 "tool_name": execution.tool_name,

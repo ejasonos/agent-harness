@@ -23,6 +23,12 @@ def test_log_event_carries_run_context_and_redacts_credentials(monkeypatch):
                     "api_key": "must-not-appear",
                     "safe": "visible",
                 },
+                usage={
+                    "prompt_tokens": 20,
+                    "completion_tokens": 3,
+                    "total_tokens": 23,
+                    "access_token": "must-not-appear",
+                },
             )
     finally:
         logger.removeHandler(handler)
@@ -32,9 +38,13 @@ def test_log_event_carries_run_context_and_redacts_credentials(monkeypatch):
     assert record["model_purpose"] == "planner"
     assert record["credentials"]["api_key"] == "[REDACTED]"
     assert record["credentials"]["safe"] == "visible"
+    assert record["usage"]["prompt_tokens"] == 20
+    assert record["usage"]["completion_tokens"] == 3
+    assert record["usage"]["access_token"] == "[REDACTED]"
 
 
 def test_mcp_http_trace_records_request_and_response(monkeypatch):
+    monkeypatch.setenv("LOG_PAYLOADS", "true")
     events = []
     monkeypatch.setattr(
         "mcp_client.client.log_event",

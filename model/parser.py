@@ -26,13 +26,51 @@ class ModelParser:
         )
 
         finish_reason = ModelParser._extract_finish_reason(data)
+        usage = ModelParser._extract_usage(data)
 
         return ModelResponse(
             content=content,
             tool_calls=tool_calls,
             raw=data,
             finish_reason=finish_reason,
+            usage=usage,
         )
+
+    @staticmethod
+    def _extract_usage(data: dict[str, Any]) -> dict[str, int | float]:
+        raw_usage = data.get("usage")
+        if isinstance(raw_usage, dict):
+            prompt_tokens = raw_usage.get(
+                "prompt_tokens",
+                raw_usage.get("input_tokens"),
+            )
+            completion_tokens = raw_usage.get(
+                "completion_tokens",
+                raw_usage.get("output_tokens"),
+            )
+        else:
+            prompt_tokens = data.get("prompt_eval_count")
+            completion_tokens = data.get("eval_count")
+
+        usage: dict[str, int | float] = {}
+        if isinstance(prompt_tokens, (int, float)) and not isinstance(prompt_tokens, bool):
+            usage["prompt_tokens"] = prompt_tokens
+        if isinstance(completion_tokens, (int, float)) and not isinstance(completion_tokens, bool):
+            usage["completion_tokens"] = completion_tokens
+
+        total_tokens = (
+            raw_usage.get("total_tokens")
+            if isinstance(raw_usage, dict)
+            else None
+        )
+        if isinstance(total_tokens, (int, float)) and not isinstance(total_tokens, bool):
+            usage["total_tokens"] = total_tokens
+        elif "prompt_tokens" in usage or "completion_tokens" in usage:
+            usage["total_tokens"] = (
+                usage.get("prompt_tokens", 0)
+                + usage.get("completion_tokens", 0)
+            )
+        return usage
 
     @staticmethod
     def _extract_message(

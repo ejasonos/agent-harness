@@ -67,3 +67,23 @@ def test_failed_tool_retrieves_new_journal_entries_into_context():
         journal_path = journal.path
 
     assert not journal_path.exists()
+
+
+def test_final_journal_compaction_is_bounded_and_keeps_recent_evidence():
+    journal = "\n".join(
+        json.dumps(
+            {
+                "event": "tool_result",
+                "tool_name": f"tool-{index}",
+                "success": True,
+                "result": f"evidence-{index} " + ("x" * 1200),
+            }
+        )
+        for index in range(5)
+    )
+
+    compacted = AgentLoop._compact_journal(journal, max_chars=1800)
+
+    assert len(compacted) <= 1800
+    assert "COMPACTED TASK JOURNAL" in compacted
+    assert "tool-4" in compacted

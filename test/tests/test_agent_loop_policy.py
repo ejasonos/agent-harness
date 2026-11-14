@@ -5,6 +5,7 @@ from unittest.mock import Mock
 from agent.context import ContextManager
 from agent.evaluator import Evaluation, NextAction
 from agent.loop import AgentLoop, AgentLoopConfig
+from agent.planner import Planner
 from agent.state import AgentState, ToolExecution
 from mcp_client.registry import ToolRegistry
 from mcp_client.schemas import MCPTool, ToolPolicy
@@ -183,6 +184,7 @@ def test_pending_verification_blocks_completion_and_other_tools():
     loop.registry = SimpleNamespace(
         get=lambda name: MCPTool(name=name, policy=ToolPolicy())
     )
+    loop.workspace = WorkspaceManager(".")
     state = AgentState(
         task="edit a file",
         verification_pending=True,
@@ -211,6 +213,43 @@ def test_pending_verification_blocks_completion_and_other_tools():
         state,
         ToolCall(tool_name="directory_tree", arguments={}),
     ) is None
+
+
+def test_finish_is_rejected_when_evaluator_says_goal_is_incomplete():
+    loop = AgentLoop.__new__(AgentLoop)
+    loop.context = ContextManager()
+    state = AgentState(task="inspect and summarize the project")
+
+    finished = loop._handle_evaluation(
+        state,
+        SimpleNamespace(
+            next_action=NextAction.FINISH,
+            goal_complete=False,
+            reason="Inspection is incomplete.",
+        ),
+    )
+
+    assert finished is False
+    assert state.completed is False
+    assert "goal_complete=false" in state.messages[-1].content
+
+
+def test_planner_receives_react_contract_without_chain_of_thought_request():
+    model = SimpleNamespace(
+        chat=Mock(return_value=ModelResponse(content="done"))
+    )
+    planner = Planner(model, ContextManager())
+    state = AgentState(task="inspect the project")
+
+    planner.plan(state, tools=[])
+
+    system_messages = [
+        message.content
+        for message in model.chat.call_args.kwargs["messages"]
+        if message.role == "system"
+    ]
+    assert any("bounded ReAct loop" in content for content in system_messages)
+    assert any("Do not reveal private chain-of-thought" in content for content in system_messages)
 
 
 def test_failed_verification_result_keeps_verification_pending():

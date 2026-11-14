@@ -30,7 +30,7 @@ ollama list
 
 The Ollama desktop app normally starts its local service. If the service is not running, start it in a separate terminal with `ollama serve`. Confirm the model responds with `ollama run gemma4:e4b` and exit the model prompt with `/bye`.
 
-The development runner, `test_agent_loop.py`, uses `OllamaClient` and does not require an NVIDIA key. To use NVIDIA instead, configure `NVIDIA_API_KEY` and explicitly construct and pass an `NVIDIAClient`; the default NVIDIA model is `meta/llama-3.2-11b-vision-instruct`.
+The development runner, `test_agent_loop.py`, routes through the local Ollama server to `beam:cloud` and explicitly opts into cloud-tagged models. Cloud inference may consume provider quota or credits. For local-only inference, use the quick-start example with the installed `OLLAMA_MODEL` (default `gemma4:e4b`). To use NVIDIA instead, configure `NVIDIA_API_KEY` and explicitly construct and pass an `NVIDIAClient`; the default NVIDIA model is `meta/llama-3.2-11b-vision-instruct`.
 
 ### 3. Start the MCP server
 
@@ -49,7 +49,7 @@ In a second terminal, from the project directory, create or run a Python program
 ```python
 from dotenv import load_dotenv
 
-from agent.loop import AgentLoop
+from agent.loop import AgentLoop, AgentLoopConfig
 from config.settings import load_settings
 from mcp_client.client import MCPClient
 from mcp_client.registry import ToolRegistry
@@ -74,11 +74,29 @@ model = OllamaClient(
 	base_url=settings.ollama_host,
 	timeout=600,
 )
+model.ensure_model_available()
 agent = AgentLoop(
 	model=model,
 	mcp_client=mcp_client,
 	registry=ToolRegistry(mcp_client),
 	workspace=workspace,
+	config=AgentLoopConfig(
+		max_iterations=settings.max_iterations,
+		max_tool_calls=settings.max_tool_calls,
+		max_context_messages=settings.max_context_messages,
+		max_context_tokens=settings.max_context_tokens,
+		model_input_cost_per_million_tokens=(
+			settings.model_input_cost_per_million_tokens
+		),
+		model_output_cost_per_million_tokens=(
+			settings.model_output_cost_per_million_tokens
+		),
+		enable_subagents=settings.enable_subagents,
+		max_subagents_per_run=settings.max_subagents_per_run,
+		max_subagent_iterations=settings.max_subagent_iterations,
+		max_subagent_tool_calls=settings.max_subagent_tool_calls,
+		max_subagent_task_chars=settings.max_subagent_task_chars,
+	),
 )
 
 result = agent.run("Explain the project structure")
@@ -111,6 +129,12 @@ OLLAMA_HOST=http://127.0.0.1:11434
 
 `OLLAMA_HOST` is the Ollama server's base URL, not the `/api/chat` endpoint. `OLLAMA_MODEL` must match a model shown by `ollama list` and should support tool calling if you expect the agent to use MCP tools. After changing `.env`, restart the agent process. Ollama handles local inference; web search is a separate tool and still requires network access and `TAVILY_API_KEY`.
 
+The local runner and Prefect Ollama path call `ensure_model_available()` before starting the agent. It queries only `/api/tags`, verifies the configured model is installed, and fails with a local setup hint if it is not. This preflight makes no generation request. Cloud-tagged Ollama model names are rejected to avoid silently using remote inference.
+
+Inference internals such as KV caching, paged attention, continuous batching, and speculative decoding stay with the configured serving engine (Ollama or NVIDIA). This Python agent records provider usage and latency but does not reimplement model serving. Fine-tuning or vector retrieval should be added only when offline trajectory evaluations identify a concrete quality gap or a corpus that workspace/web search cannot cover.
+
+Subagents are bounded investigators. They share the configured model and MCP connection but receive only read-only file, project, and Git inspection tools. A child has its own evaluator, cannot delegate, and cannot modify files or run shell commands. The parent retains authority over mutations, verification, and final completion. Delegations run serially; failed or capped children are surfaced as unresolved parent tool failures.
+
 ### Use a different workspace
 
 In each PowerShell terminal, set `AGENT_WORKSPACE` to the existing project directory before starting the process:
@@ -128,6 +152,7 @@ The MCP server and your agent program can load a `.env` file from the project di
 ```dotenv
 AGENT_WORKSPACE=C:\path\to\your\project
 MCP_URL=http://127.0.0.1:8082/mcp
+MODEL_PROVIDER=ollama
 OLLAMA_HOST=http://127.0.0.1:11434
 OLLAMA_MODEL=gemma4:e4b
 
@@ -142,6 +167,18 @@ TAVILY_API_KEY=your-tavily-key
 # Structured agent/model/MCP trace output
 LOG_LEVEL=DEBUG
 LOG_FILE=logs/agent.jsonl
+LOG_PAYLOADS=false
+
+# Context budget and optional model pricing, USD per million tokens
+MAX_CONTEXT_MESSAGES=50
+MAX_CONTEXT_TOKENS=16000
+ENABLE_SUBAGENTS=true
+MAX_SUBAGENTS_PER_RUN=2
+MAX_SUBAGENT_ITERATIONS=8
+MAX_SUBAGENT_TOOL_CALLS=12
+MAX_SUBAGENT_TASK_CHARS=2000
+# MODEL_INPUT_COST_PER_MILLION_TOKENS=...
+# MODEL_OUTPUT_COST_PER_MILLION_TOKENS=...
 
 # Tool permissions
 ALLOW_DELETE=true
@@ -156,6 +193,7 @@ Available runtime settings include:
 | --- | --- | --- |
 | `AGENT_WORKSPACE` | Current directory | Root used by the MCP server. Set the UI to the same path. |
 | `MCP_URL` | `http://127.0.0.1:8082/mcp` | MCP endpoint used by the agent. |
+| `MODEL_PROVIDER` | `ollama` | Uses local Ollama by default; `nvidia` explicitly selects the hosted NVIDIA API. |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama API URL. |
 | `OLLAMA_MODEL` | `gemma4:e4b` | Default local model. |
 | `NVIDIA_API_KEY` | Unset | Required when using NVIDIA API. |
@@ -168,12 +206,24 @@ Available runtime settings include:
 | `ALLOW_NETWORK` | `true` | Enables network-dependent tools. |
 | `MAX_ITERATIONS` | `30` | Maximum agent planning iterations. |
 | `MAX_TOOL_CALLS` | `100` | Maximum tool calls per run. |
-| `LOG_LEVEL` | `INFO` | Log verbosity; use `DEBUG` for full model and MCP payloads. |
+| `MAX_CONTEXT_MESSAGES` | `50` | Maximum retained context messages, subject to required system/task messages. |
+| `MAX_CONTEXT_TOKENS` | `16000` | Estimated context token budget. A provider tokenizer can be supplied through `ContextManager`. |
+| `MODEL_INPUT_COST_PER_MILLION_TOKENS` | Unset | Optional input rate used for estimated per-run cost. |
+| `MODEL_OUTPUT_COST_PER_MILLION_TOKENS` | Unset | Optional output rate; cost is reported only when both rates and provider usage are available. |
+| `ENABLE_SUBAGENTS` | `true` | Enables bounded `delegate_task` investigation by read-only child agents. |
+| `MAX_SUBAGENTS_PER_RUN` | `2` | Maximum child runs per parent task. |
+| `MAX_SUBAGENT_ITERATIONS` | `8` | Maximum planning iterations for each child. |
+| `MAX_SUBAGENT_TOOL_CALLS` | `12` | Maximum tool calls for each child. |
+| `MAX_SUBAGENT_TASK_CHARS` | `2000` | Maximum size of a delegated task description. |
+| `LOG_LEVEL` | `INFO` | Log verbosity. |
 | `LOG_FILE` | Unset | Optional rotating JSON-lines log file (10 MB, three backups). |
+| `LOG_PAYLOADS` | `false` | Explicitly allows prompts, tool arguments/results, and MCP payloads in debug logs. |
 | `COMMAND_TIMEOUT` | `120` seconds | Default command timeout. |
 | `TOOL_TIMEOUT` | `120` seconds | Default MCP request timeout. |
 
-Logs are structured JSON events. DEBUG payload events can include prompts, model responses, tool arguments, and workspace data; protect log files accordingly. Credential-like fields such as API keys, authorization values, passwords, and tokens are redacted by key name.
+Logs are structured JSON events. Model and tool payloads are omitted even at DEBUG level unless `LOG_PAYLOADS=true`; credential-like fields such as API keys, authorization values, passwords, and tokens are also redacted by key name. Provider-reported token usage, model-call latency, tool latency, and total run duration are aggregated in the run result and structured completion event.
+
+The default context budget is a conservative estimate (serialized characters divided by three), not an exact tokenizer count. Planner tool schemas reserve part of the same budget. Pass a provider-specific `token_counter` to `ContextManager` when exact token accounting is available. Old history is compacted into bounded, labeled notes; the original task and recent tool-call/result pairs are retained.
 
 Boolean settings accept `1`, `true`, `yes`, or `on` as enabled. Any other explicit value disables the setting. Restart the relevant process after changing its environment or `.env` values.
 

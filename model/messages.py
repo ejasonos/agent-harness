@@ -40,6 +40,18 @@ class Message:
 
         return message
 
+    def to_ollama_dict(self) -> dict[str, Any]:
+        message: dict[str, Any] = {
+            "role": self.role,
+            "content": self.content,
+        }
+        if self.tool_calls:
+            message["tool_calls"] = [
+                call.to_ollama_dict()
+                for call in self.tool_calls
+            ]
+        return message
+
 
 @dataclass
 class ToolCall:
@@ -89,6 +101,7 @@ class ModelResponse:
     tool_calls: list[ToolCall] = field(default_factory=list)
     raw: Any = None
     finish_reason: str | None = None
+    usage: dict[str, int | float] = field(default_factory=dict)
 
     @property
     def has_tool_calls(self) -> bool:

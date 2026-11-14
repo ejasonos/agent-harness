@@ -5,7 +5,7 @@ from typing import Any
 
 from agent.context import ContextManager
 from agent.state import AgentState
-from model.messages import ModelResponse
+from model.messages import Message, ModelResponse
 from model.ollama_client import OllamaClient
 from utils.logging import log_context, log_event
 
@@ -49,7 +49,31 @@ class Planner:
         Ask the model to determine the next action.
         """
 
-        messages = self.context.build_messages(state)
+        planner_instructions = Message(
+            role="system",
+            content=(
+                "You are the planner in a bounded ReAct loop: reason "
+                "about the next useful step, act with an available tool "
+                "when needed, then use its observation to reassess. "
+                "Follow the evaluator's required phase and the runtime's "
+                "tool policies. Do not claim completion because a tool "
+                "succeeded; the evaluator controls completion and the "
+                "runtime requires verification after mutations. Do not "
+                "use delegate_task except for an independent read-only "
+                "investigation; the parent owns all changes and final "
+                "completion. Do not reveal private chain-of-thought. "
+                "Give only concise action rationales or the user-facing answer."
+            ),
+        )
+        reserved_tokens = (
+            self.context.estimate_tokens_for_value(tools or [])
+            + self.context.token_counter(planner_instructions)
+        )
+        messages = self.context.build_messages(
+            state,
+            reserved_tokens=reserved_tokens,
+        )
+        messages.insert(0, planner_instructions)
 
         log_event(
             "agent.planner.requested",

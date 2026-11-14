@@ -14,6 +14,14 @@ from .defaults import (
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_MAX_TOOL_CALLS,
     DEFAULT_MAX_CONTEXT_MESSAGES,
+    DEFAULT_MAX_CONTEXT_TOKENS,
+    DEFAULT_ENABLE_SUBAGENTS,
+    DEFAULT_MAX_SUBAGENTS_PER_RUN,
+    DEFAULT_MAX_SUBAGENT_ITERATIONS,
+    DEFAULT_MAX_SUBAGENT_TOOL_CALLS,
+    DEFAULT_MAX_SUBAGENT_TASK_CHARS,
+    DEFAULT_MODEL_INPUT_COST_PER_MILLION_TOKENS,
+    DEFAULT_MODEL_OUTPUT_COST_PER_MILLION_TOKENS,
     DEFAULT_COMMAND_TIMEOUT,
     DEFAULT_TOOL_TIMEOUT,
     DEFAULT_BROWSER_WIDTH,
@@ -52,6 +60,16 @@ def _env_int(name: str, default: int) -> int:
 
     try:
         return int(value)
+    except ValueError:
+        return default
+
+
+def _env_optional_float(name: str, default: float | None) -> float | None:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    try:
+        return float(value)
     except ValueError:
         return default
 
@@ -125,6 +143,62 @@ class AgentSettings:
         default_factory=lambda: _env_int(
             "MAX_CONTEXT_MESSAGES",
             DEFAULT_MAX_CONTEXT_MESSAGES,
+        )
+    )
+
+    max_context_tokens: int = field(
+        default_factory=lambda: _env_int(
+            "MAX_CONTEXT_TOKENS",
+            DEFAULT_MAX_CONTEXT_TOKENS,
+        )
+    )
+
+    model_input_cost_per_million_tokens: float | None = field(
+        default_factory=lambda: _env_optional_float(
+            "MODEL_INPUT_COST_PER_MILLION_TOKENS",
+            DEFAULT_MODEL_INPUT_COST_PER_MILLION_TOKENS,
+        )
+    )
+
+    model_output_cost_per_million_tokens: float | None = field(
+        default_factory=lambda: _env_optional_float(
+            "MODEL_OUTPUT_COST_PER_MILLION_TOKENS",
+            DEFAULT_MODEL_OUTPUT_COST_PER_MILLION_TOKENS,
+        )
+    )
+
+    enable_subagents: bool = field(
+        default_factory=lambda: _env_bool(
+            "ENABLE_SUBAGENTS",
+            DEFAULT_ENABLE_SUBAGENTS,
+        )
+    )
+
+    max_subagents_per_run: int = field(
+        default_factory=lambda: _env_int(
+            "MAX_SUBAGENTS_PER_RUN",
+            DEFAULT_MAX_SUBAGENTS_PER_RUN,
+        )
+    )
+
+    max_subagent_iterations: int = field(
+        default_factory=lambda: _env_int(
+            "MAX_SUBAGENT_ITERATIONS",
+            DEFAULT_MAX_SUBAGENT_ITERATIONS,
+        )
+    )
+
+    max_subagent_tool_calls: int = field(
+        default_factory=lambda: _env_int(
+            "MAX_SUBAGENT_TOOL_CALLS",
+            DEFAULT_MAX_SUBAGENT_TOOL_CALLS,
+        )
+    )
+
+    max_subagent_task_chars: int = field(
+        default_factory=lambda: _env_int(
+            "MAX_SUBAGENT_TASK_CHARS",
+            DEFAULT_MAX_SUBAGENT_TASK_CHARS,
         )
     )
 

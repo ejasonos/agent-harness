@@ -23,7 +23,7 @@ import requests
 
 from config.settings import AgentSettings
 from .schemas import MCPToolResult
-from utils.logging import log_event
+from utils.logging import log_event, log_payloads_enabled
 
 
 class MCPError(RuntimeError):
@@ -97,12 +97,13 @@ class MCPClient:
             url=self.url,
             timeout=timeout,
         )
-        log_event(
-            "mcp.request.payload",
-            level=logging.DEBUG,
-            request_id=request_id,
-            payload=payload,
-        )
+        if log_payloads_enabled():
+            log_event(
+                "mcp.request.payload",
+                level=logging.DEBUG,
+                request_id=request_id,
+                payload=payload,
+            )
 
         try:
             response = self.http.post(
@@ -142,12 +143,12 @@ class MCPClient:
                 method=method,
                 status_code=response.status_code,
                 duration_ms=round((time.perf_counter() - started) * 1000, 2),
-                body=response.text,
+                body=response.text if log_payloads_enabled() else None,
             )
-            raise MCPError(
-                f"MCP HTTP {response.status_code}: "
-                f"{response.text[:2000]}"
-            )
+            error_message = f"MCP HTTP {response.status_code}"
+            if log_payloads_enabled():
+                error_message += f": {response.text[:2000]}"
+            raise MCPError(error_message)
 
         try:
             parsed_response = self._parse_response(response)
@@ -170,13 +171,14 @@ class MCPClient:
             status_code=response.status_code,
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
         )
-        log_event(
-            "mcp.response.payload",
-            level=logging.DEBUG,
-            request_id=request_id,
-            method=method,
-            payload=parsed_response,
-        )
+        if log_payloads_enabled():
+            log_event(
+                "mcp.response.payload",
+                level=logging.DEBUG,
+                request_id=request_id,
+                method=method,
+                payload=parsed_response,
+            )
         return parsed_response
 
     # ------------------------------------------------------------------

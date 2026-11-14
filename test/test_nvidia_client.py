@@ -51,6 +51,7 @@ def test_nvidia_normalizes_completed_tool_batch_as_single_call_turns():
 
 
 def test_nvidia_chat_disables_parallel_tool_calls(monkeypatch):
+    monkeypatch.setenv("LOG_PAYLOADS", "true")
     events = []
     monkeypatch.setattr(
         "model.nvidia_client.log_event",
@@ -90,3 +91,36 @@ def test_nvidia_chat_disables_parallel_tool_calls(monkeypatch):
         "model.response.parsed",
         "model.response.details",
     ]
+
+
+def test_nvidia_usage_is_normalized_and_payload_logs_are_opt_in(monkeypatch):
+    monkeypatch.delenv("LOG_PAYLOADS", raising=False)
+    events = []
+    monkeypatch.setattr(
+        "model.nvidia_client.log_event",
+        lambda event, **fields: events.append((event, fields)),
+    )
+    response = Mock(ok=True, status_code=200, text="response")
+    response.json.return_value = {
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": "done"},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 4,
+            "total_tokens": 16,
+        },
+    }
+    monkeypatch.setattr("model.nvidia_client.requests.post", Mock(return_value=response))
+    client = NVIDIAClient(model="test-model", api_key="test-key")
+
+    result = client.chat([Message(role="user", content="private task")])
+
+    assert result.usage["prompt_tokens"] == 12
+    assert result.usage["completion_tokens"] == 4
+    assert result.usage["total_tokens"] == 16
+    assert "request_duration_ms" in result.usage
+    assert not any("payload" in event or event.endswith("details") for event, _ in events)

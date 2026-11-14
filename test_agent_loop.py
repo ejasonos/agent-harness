@@ -6,15 +6,11 @@ from config.settings import load_settings
 from mcp_client.client import MCPClient
 from mcp_client.registry import ToolRegistry
 from model.ollama_client import OllamaClient
-from model.nvidia_client import NVIDIAClient
 from workspace.manager import WorkspaceManager
 
 settings = load_settings()
+
 # Workspace
-# workspace = WorkspaceManager(
-#     ".",
-#     allow_delete=settings.allow_delete,
-# )
 workspace = WorkspaceManager(
 	".",
 	allow_delete=settings.allow_delete,
@@ -30,32 +26,42 @@ registry = ToolRegistry(mcp_client)
 
 # Ollama
 model1 = OllamaClient(
-    model=settings.model,
+    model="beam:cloud",
     base_url=settings.ollama_host,
     timeout=600,
+    allow_cloud_models=True,
 )
-model2 = NVIDIAClient(
-    model=settings.nvidia_model,
-    api_key=settings.nvidia_api_key,
-    base_url=settings.nvidia_endpoint,
-    timeout=600,
-)
+model1.ensure_model_available()
 
 # Agent
 agent = AgentLoop(
-    model=model2,
+    model=model1,
     mcp_client=mcp_client,
     registry=registry,
     workspace=workspace,
     config=AgentLoopConfig(
-        max_iterations=300,
-        max_tool_calls=300,
+        max_iterations=settings.max_iterations,
+        max_tool_calls=settings.max_tool_calls,
+        max_context_messages=settings.max_context_messages,
+        max_context_tokens=settings.max_context_tokens,
+        model_input_cost_per_million_tokens=(
+            settings.model_input_cost_per_million_tokens
+        ),
+        model_output_cost_per_million_tokens=(
+            settings.model_output_cost_per_million_tokens
+        ),
+        enable_subagents=settings.enable_subagents,
+        max_subagents_per_run=settings.max_subagents_per_run,
+        max_subagent_iterations=settings.max_subagent_iterations,
+        max_subagent_tool_calls=settings.max_subagent_tool_calls,
+        max_subagent_task_chars=settings.max_subagent_task_chars,
     ),
 )
 
 task = """
-Hello, how are you?
+Create a retro poem folder and write the complete poem into it 'Twinkle Twinkle Little Star'
 """
+task1 = 'hello! what is your knowledge cutoff date.'
 
 original_plan = agent.planner.plan
 
@@ -107,6 +113,9 @@ print(f"Completed: {state.completed}")
 print(f"Iterations: {state.iteration}")
 print(f"Tool executions: {len(state.tool_executions)}")
 print(f"Tool failure counts: {state.tool_failure_counts}")
+print(f"Model calls: {state.model_call_count}")
+print(f"Model tokens: {state.model_usage}")
+print(f"Estimated model cost (USD): {state.estimated_model_cost_usd}")
 
 print("\nTool executions:")
 
