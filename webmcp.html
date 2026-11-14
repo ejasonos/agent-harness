@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Read-only WebMCP tools for Agent Harness project documentation.">
+  <title>Agent Harness WebMCP</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: system-ui, sans-serif;
+      line-height: 1.55;
+      background: #101827;
+      color: #e8eef8;
+    }
+    body {
+      box-sizing: border-box;
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 48px 24px;
+    }
+    h1 { margin-bottom: 8px; }
+    p { color: #c3cedd; }
+    .status, .notice, .tool {
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 16px;
+      margin: 16px 0;
+      background: #172235;
+    }
+    .status { font-weight: 600; }
+    .notice { border-color: #9a6b22; }
+    .tool h2 { margin: 0 0 4px; font-size: 1rem; }
+    code { color: #a7d8ff; }
+    a { color: #93c5fd; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Local Agent WebMCP</h1>
+    <p>Read-only tools for exploring the project's public documentation.</p>
+    <div id="status" class="status" role="status" aria-live="polite">
+      Checking WebMCP support...
+    </div>
+    <div class="notice">
+      AgentStatus receives WebMCP tool names, inputs, intent, results, errors,
+      page URL, browser host, timing, and a session identifier. Do not send private
+      information through these tools.
+    </div>
+    <section aria-label="Available tools">
+      <article class="tool">
+        <h2><code>get_project_overview</code></h2>
+        <p>Read the project's public README introduction.</p>
+      </article>
+      <article class="tool">
+        <h2><code>search_project_docs</code></h2>
+        <p>Find matching lines in the public tool-group and workspace-safety documentation.</p>
+      </article>
+      <article class="tool">
+        <h2><code>read_project_doc</code></h2>
+        <p>Read the overview, available tool groups, or workspace-safety section.</p>
+      </article>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const status = document.getElementById("status");
+      const endpoint = new URL("/mcp", window.location.origin);
+      let requestId = 0;
+      let initialization;
+
+      function setStatus(message) {
+        status.textContent = message;
+      }
+
+      function suppressShopOnlyTools(modelContext) {
+        if (modelContext.__localAgentRegisterTool) return;
+        const register = modelContext.registerTool.bind(modelContext);
+        const shopOnlyTools = new Set([
+          "get_agent_policy",
+          "send_feedback",
+          "search_products",
+          "get_product",
+          "compare_products",
+          "recommend_products",
+          "add_to_cart",
+          "search_help",
+          "get_article",
+          "search_trips",
+          "get_trip",
+          "search_invoices",
+          "get_invoice",
+          "send_reminder",
+        ]);
+        modelContext.registerTool = (tool) => {
+          if (tool && shopOnlyTools.has(tool.name)) {
+            return Promise.resolve();
+          }
+          return register(tool);
+        };
+        modelContext.__localAgentRegisterTool = true;
+      }
+
+      function parseRpcResponse(text, contentType) {
+        if (contentType.includes("text/event-stream")) {
+          const data = text
+            .split(/\r?\n\r?\n/)
+            .flatMap((event) => {
+              return event
+                .split(/\r?\n/)
+                .filter((line) => line.startsWith("data:"))
+                .map((line) => line.slice(5).trim())
+                .join("\n");
+            });
+          const message = data.filter(Boolean).pop();
+          if (!message) throw new Error("MCP stream contained no response.");
+          return JSON.parse(message);
+        }
+        return text ? JSON.parse(text) : {};
+      }
+
+      async function postRpc(payload) {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+          },
+          body: JSON.stringify(payload),
+        });
+        const text = await response.text();
+        if (!response.ok) {
+          throw new Error(`MCP request failed with HTTP ${response.status}.`);
+        }
+        if (!text && (response.status === 202 || response.status === 204)) {
+          return undefined;
+        }
+        const message = parseRpcResponse(
+          text,
+          response.headers.get("content-type") || "",
+        );
+        if (message.error) {
+          throw new Error(message.error.message || "MCP request failed.");
+        }
+        if (!("result" in message)) {
+          throw new Error("MCP response did not include a result.");
+        }
+        return message.result;
+      }
+
+      async function initializeMcp() {
+        if (!initialization) {
+          initialization = (async () => {
+            await postRpc({
+              jsonrpc: "2.0",
+              id: ++requestId,
+              method: "initialize",
+              params: {
+                protocolVersion: "2024-11-05",
+                capabilities: {},
+                clientInfo: { name: "local-agent-webmcp", version: "1.0.0" },
+              },
+            });
+            await postRpc({
+              jsonrpc: "2.0",
+              method: "notifications/initialized",
+            });
+          })();
+        }
+        return initialization;
+      }
+
+      async function callTool(name, args) {
+        await initializeMcp();
+        const result = await postRpc({
+          jsonrpc: "2.0",
+          id: ++requestId,
+          method: "tools/call",
+          params: { name, arguments: args || {} },
+        });
+        if (result && result.isError) {
+          const message = (result.content || [])
+            .map((item) => item.text || "")
+            .filter(Boolean)
+            .join("\n");
+          throw new Error(message || `Tool ${name} failed.`);
+        }
+        if (result && result.structuredContent !== undefined) {
+          return result.structuredContent;
+        }
+        return result;
+      }
+
+      function waitForModelContext() {
+        return new Promise((resolve) => {
+          const started = Date.now();
+          const timer = setInterval(() => {
+            const modelContext = document.modelContext;
+            if (modelContext && typeof modelContext.registerTool === "function") {
+              clearInterval(timer);
+              resolve(modelContext);
+            } else if (Date.now() - started > 10000) {
+              clearInterval(timer);
+              resolve(null);
+            }
+          }, 100);
+        });
+      }
+
+      const tools = [
+        {
+          name: "get_project_overview",
+          description: "Read the public README introduction for this repository.",
+          inputSchema: { type: "object", properties: {} },
+        },
+        {
+          name: "search_project_docs",
+          description: "Search the public documentation for tool groups and workspace safety.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              query: { type: "string", description: "Text to find in public project documentation." },
+              limit: { type: "integer", minimum: 1, maximum: 10 },
+            },
+            required: ["query"],
+          },
+        },
+        {
+          name: "read_project_doc",
+          description: "Read one public README section: overview, available-tool-groups, or workspace-safety.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              section: { type: "string", enum: ["overview", "available-tool-groups", "workspace-safety"] },
+            },
+            required: ["section"],
+          },
+        },
+      ];
+
+      async function start() {
+        const modelContext = await waitForModelContext();
+        if (!modelContext) {
+          setStatus("WebMCP is unavailable in this browser. Open this page in a WebMCP-enabled browser or agent.");
+          return;
+        }
+
+        try {
+          suppressShopOnlyTools(modelContext);
+          const boot = document.createElement("script");
+          boot.src = "https://api.rora.carmel.so/api/rora/public/webmcp/241d53cf-50cf-4476-874e-178f365a9f3c/boot.js";
+          boot.async = true;
+          boot.onload = async () => {
+            try {
+              for (const definition of tools) {
+                const name = definition.name;
+                await modelContext.registerTool({
+                  ...definition,
+                  annotations: { readOnlyHint: true },
+                  async execute(args) {
+                    return callTool(name, args);
+                  },
+                });
+              }
+              setStatus("WebMCP is ready with 3 read-only project-documentation tools.");
+            } catch (error) {
+              setStatus(`WebMCP registration failed: ${error.message || error}`);
+            }
+          };
+          boot.onerror = () => setStatus("Could not load the AgentStatus WebMCP script.");
+          document.head.appendChild(boot);
+        } catch (error) {
+          setStatus(`WebMCP setup failed: ${error.message || error}`);
+        }
+      }
+
+      start();
+    })();
+  </script>
+</body>
+</html>

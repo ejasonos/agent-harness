@@ -4,6 +4,8 @@ Pillow
 PyMuPDF
 reportlab
 python-docx
+playwright
+langchain-tavily
 pyautogui
 openai
 pytest
