@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import inspect
 import logging
 import time
 from functools import wraps
@@ -14,23 +15,18 @@ from dotenv import load_dotenv
 
 from config.settings import load_settings
 from workspace.manager import WorkspaceManager
-from tools.math_fns import (
-    addition as _addition,
-    subtraction as _subtraction,
-    multiply as _multiply,
-    division as _division,
-)
 
+from tools.filesystem.read_many import (
+    DEFAULT_MAX_TOTAL_READ_BYTES,
+    MAX_FILE_READ_BYTES,
+    read_files as _read_files,
+)
 from tools.filesystem.read import read_file as _read_file
 from tools.filesystem.write import write_file as _write_file
 from tools.filesystem.edit import edit_file as _edit_file
 from tools.filesystem.delete import delete_file as _delete_file
 from tools.filesystem.search import search_files as _search_files
 from tools.filesystem.tree import directory_tree as _directory_tree
-
-from tools.project.detect import detect_project as _detect_project
-from tools.project.framework import detect_framework as _detect_framework
-from tools.project.commands import project_commands as _project_commands
 
 from tools.git.status import git_status as _git_status
 from tools.git.diff import git_diff as _git_diff
@@ -98,6 +94,7 @@ from tools.browser.interaction import (
 
 from tools.browser.inspection import (
     browser_page_text as _browser_page_text,
+    browser_page_snapshot as _browser_page_snapshot,
     browser_element_text as _browser_element_text,
     browser_element_attribute as _browser_element_attribute,
     browser_element_exists as _browser_element_exists,
@@ -112,7 +109,13 @@ from tools.browser.console import (
 from tools.browser.network import (
     browser_get_requests as _browser_get_requests,
     browser_get_responses as _browser_get_responses,
+    browser_get_failed_requests as _browser_get_failed_requests,
     browser_clear_network as _browser_clear_network,
+)
+
+from tools.browser.waiting import (
+    BrowserWaitState,
+    browser_wait as _browser_wait,
 )
 
 from tools.browser.viewport import (
@@ -241,6 +244,14 @@ workspace = WorkspaceManager(
 
 
 def _network_required(function):
+    if inspect.iscoroutinefunction(function):
+        @wraps(function)
+        async def checked_async(*args, **kwargs):
+            workspace.check_network()
+            return await function(*args, **kwargs)
+
+        return checked_async
+
     @wraps(function)
     def checked(*args, **kwargs):
         workspace.check_network()
@@ -563,14 +574,14 @@ def html_to_pdf(
 # =========================================================
 
 @mcp.tool()
-def browser_launch(
+async def browser_launch(
     headless: bool = True,
     viewport_width: int = 1280,
     viewport_height: int = 900,
 ) -> dict[str, object]:
-    """Launch the persistent browser session."""
+    """Start the persistent Chromium session; use before browser navigation."""
 
-    return _browser_launch(
+    return await _browser_launch(
         headless=headless,
         viewport_width=viewport_width,
         viewport_height=viewport_height,
@@ -578,28 +589,28 @@ def browser_launch(
 
 
 @mcp.tool()
-def browser_close() -> dict[str, object]:
+async def browser_close() -> dict[str, object]:
     """Close the persistent browser session."""
 
-    return _browser_close()
+    return await _browser_close()
 
 
 @mcp.tool()
-def browser_status() -> dict[str, object]:
+async def browser_status() -> dict[str, object]:
     """Return browser session status."""
 
-    return _browser_status()
+    return await _browser_status()
 
 
 @mcp.tool()
 @_network_required
-def browser_goto(
+async def browser_goto(
     url: str,
     timeout: int = 30_000,
 ) -> dict[str, object]:
-    """Navigate the browser to a URL."""
+    """Open a webpage for interaction or inspection; web_search is for discovery."""
 
-    return _browser_goto(
+    return await _browser_goto(
         url,
         timeout=timeout,
     )
@@ -607,56 +618,56 @@ def browser_goto(
 
 @mcp.tool()
 @_network_required
-def browser_back(
+async def browser_back(
     timeout: int = 30_000,
 ) -> dict[str, object]:
-    """Navigate backward."""
+    """Navigate back in the browser's page history."""
 
-    return _browser_back(
+    return await _browser_back(
         timeout=timeout,
     )
 
 
 @mcp.tool()
 @_network_required
-def browser_forward(
+async def browser_forward(
     timeout: int = 30_000,
 ) -> dict[str, object]:
-    """Navigate forward."""
+    """Navigate forward in the browser's page history."""
 
-    return _browser_forward(
+    return await _browser_forward(
         timeout=timeout,
     )
 
 
 @mcp.tool()
 @_network_required
-def browser_reload(
+async def browser_reload(
     timeout: int = 30_000,
 ) -> dict[str, object]:
-    """Reload the current page."""
+    """Reload the current page and wait for DOM content."""
 
-    return _browser_reload(
+    return await _browser_reload(
         timeout=timeout,
     )
 
 
 @mcp.tool()
-def browser_current_page() -> dict[str, object]:
+async def browser_current_page() -> dict[str, object]:
     """Return the current URL and page title."""
 
-    return _browser_current_page()
+    return await _browser_current_page()
 
 
 @mcp.tool()
 @_network_required
-def browser_click(
+async def browser_click(
     selector: str,
     timeout: int = 10_000,
 ) -> dict[str, object]:
-    """Click an element."""
+    """Click a page element using a Playwright locator selector."""
 
-    return _browser_click(
+    return await _browser_click(
         selector,
         timeout=timeout,
     )
@@ -664,13 +675,13 @@ def browser_click(
 
 @mcp.tool()
 @_network_required
-def browser_double_click(
+async def browser_double_click(
     selector: str,
     timeout: int = 10_000,
 ) -> dict[str, object]:
-    """Double-click an element."""
+    """Double-click a page element using a Playwright locator selector."""
 
-    return _browser_double_click(
+    return await _browser_double_click(
         selector,
         timeout=timeout,
     )
@@ -678,14 +689,14 @@ def browser_double_click(
 
 @mcp.tool()
 @_network_required
-def browser_fill(
+async def browser_fill(
     selector: str,
     value: str,
     timeout: int = 10_000,
 ) -> dict[str, object]:
-    """Fill an input or editable element."""
+    """Replace an input's contents; prefer this over browser_type for forms."""
 
-    return _browser_fill(
+    return await _browser_fill(
         selector,
         value,
         timeout=timeout,
@@ -694,15 +705,15 @@ def browser_fill(
 
 @mcp.tool()
 @_network_required
-def browser_type(
+async def browser_type(
     selector: str,
     text: str,
     delay: int = 0,
     timeout: int = 10_000,
 ) -> dict[str, object]:
-    """Type text into an element."""
+    """Type into an element with per-character events; use browser_fill for forms."""
 
-    return _browser_type(
+    return await _browser_type(
         selector,
         text,
         delay=delay,
@@ -712,14 +723,14 @@ def browser_type(
 
 @mcp.tool()
 @_network_required
-def browser_press(
+async def browser_press(
     selector: str,
     key: str,
     timeout: int = 10_000,
 ) -> dict[str, object]:
-    """Press a keyboard key on an element."""
+    """Press a Playwright key on an element, such as Enter or Control+A."""
 
-    return _browser_press(
+    return await _browser_press(
         selector,
         key,
         timeout=timeout,
@@ -728,14 +739,14 @@ def browser_press(
 
 @mcp.tool()
 @_network_required
-def browser_select(
+async def browser_select(
     selector: str,
     value: str,
     timeout: int = 10_000,
 ) -> dict[str, object]:
-    """Select an option from a select element."""
+    """Select an option by value, label, or index in a select element."""
 
-    return _browser_select(
+    return await _browser_select(
         selector,
         value,
         timeout=timeout,
@@ -744,13 +755,13 @@ def browser_select(
 
 @mcp.tool()
 @_network_required
-def browser_check(
+async def browser_check(
     selector: str,
     timeout: int = 10_000,
 ) -> dict[str, object]:
-    """Check a checkbox."""
+    """Check a checkbox or radio control."""
 
-    return _browser_check(
+    return await _browser_check(
         selector,
         timeout=timeout,
     )
@@ -758,13 +769,13 @@ def browser_check(
 
 @mcp.tool()
 @_network_required
-def browser_uncheck(
+async def browser_uncheck(
     selector: str,
     timeout: int = 10_000,
 ) -> dict[str, object]:
-    """Uncheck a checkbox."""
+    """Uncheck a checkbox control."""
 
-    return _browser_uncheck(
+    return await _browser_uncheck(
         selector,
         timeout=timeout,
     )
@@ -772,51 +783,58 @@ def browser_uncheck(
 
 @mcp.tool()
 @_network_required
-def browser_hover(
+async def browser_hover(
     selector: str,
     timeout: int = 10_000,
 ) -> dict[str, object]:
-    """Hover over an element."""
+    """Hover an element to reveal menus or hover-dependent content."""
 
-    return _browser_hover(
+    return await _browser_hover(
         selector,
         timeout=timeout,
     )
 
 
 @mcp.tool()
-def browser_page_text(
+async def browser_page_text(
     max_length: int = 100_000,
 ) -> dict[str, object]:
     """Read visible text from the current page."""
 
-    return _browser_page_text(
+    return await _browser_page_text(
         max_length=max_length,
     )
 
 
 @mcp.tool()
-def browser_element_text(
+async def browser_page_snapshot() -> dict[str, object]:
+    """List visible headings and controls with role/name selectors for browser actions."""
+
+    return await _browser_page_snapshot()
+
+
+@mcp.tool()
+async def browser_element_text(
     selector: str,
     timeout: int = 10_000,
 ) -> dict[str, object]:
     """Read text from an element."""
 
-    return _browser_element_text(
+    return await _browser_element_text(
         selector,
         timeout=timeout,
     )
 
 
 @mcp.tool()
-def browser_element_attribute(
+async def browser_element_attribute(
     selector: str,
     attribute: str,
     timeout: int = 10_000,
 ) -> dict[str, object]:
     """Read an element attribute."""
 
-    return _browser_element_attribute(
+    return await _browser_element_attribute(
         selector,
         attribute,
         timeout=timeout,
@@ -824,78 +842,87 @@ def browser_element_attribute(
 
 
 @mcp.tool()
-def browser_element_exists(
+async def browser_element_exists(
     selector: str,
 ) -> dict[str, object]:
     """Check whether an element exists."""
 
-    return _browser_element_exists(
+    return await _browser_element_exists(
         selector
     )
 
 
 @mcp.tool()
-def browser_page_html(
+async def browser_page_html(
     selector: str | None = None,
     max_length: int = 200_000,
 ) -> dict[str, object]:
     """Inspect page or element HTML."""
 
-    return _browser_page_html(
+    return await _browser_page_html(
         selector,
         max_length=max_length,
     )
 
 
 @mcp.tool()
-def browser_get_console(
+async def browser_get_console(
     limit: int = 100,
 ) -> list[dict[str, object]]:
     """Return captured browser console messages."""
 
-    return _browser_get_console(
+    return await _browser_get_console(
         limit=limit
     )
 
 
 @mcp.tool()
-def browser_clear_console() -> dict[str, object]:
+async def browser_clear_console() -> dict[str, object]:
     """Clear captured browser console messages."""
 
-    return _browser_clear_console()
+    return await _browser_clear_console()
 
 
 @mcp.tool()
-def browser_get_requests(
+async def browser_get_requests(
     limit: int = 100,
 ) -> list[dict[str, object]]:
     """Return captured network requests."""
 
-    return _browser_get_requests(
+    return await _browser_get_requests(
         limit=limit
     )
 
 
 @mcp.tool()
-def browser_get_responses(
+async def browser_get_responses(
     limit: int = 100,
 ) -> list[dict[str, object]]:
     """Return captured network responses."""
 
-    return _browser_get_responses(
+    return await _browser_get_responses(
         limit=limit
     )
 
 
 @mcp.tool()
-def browser_clear_network() -> dict[str, object]:
-    """Clear captured network activity."""
+async def browser_get_failed_requests(
+    limit: int = 100,
+) -> list[dict[str, object]]:
+    """Show requests that failed before receiving an HTTP response."""
 
-    return _browser_clear_network()
+    return await _browser_get_failed_requests(limit=limit)
 
 
 @mcp.tool()
-def browser_screenshot(
+async def browser_clear_network() -> dict[str, object]:
+    """Clear captured network activity."""
+
+    return await _browser_clear_network()
+
+
+@mcp.tool()
+async def browser_screenshot(
     path: str | None = None,
     full_page: bool = False,
 ) -> dict[str, object]:
@@ -907,7 +934,7 @@ def browser_screenshot(
         else None
     )
 
-    return _browser_screenshot(
+    return await _browser_screenshot(
         output_path,
         full_page=full_page,
     )
@@ -915,13 +942,13 @@ def browser_screenshot(
 
 @mcp.tool()
 @_network_required
-def browser_set_viewport(
+async def browser_set_viewport(
     width: int,
     height: int,
 ) -> dict[str, object]:
     """Change the browser viewport size."""
 
-    return _browser_set_viewport(
+    return await _browser_set_viewport(
         width,
         height,
     )
@@ -929,15 +956,31 @@ def browser_set_viewport(
 
 @mcp.tool()
 @_network_required
-def browser_scroll(
+async def browser_scroll(
     x: int = 0,
     y: int = 0,
 ) -> dict[str, object]:
     """Scroll the current page."""
 
-    return _browser_scroll(
+    return await _browser_scroll(
         x,
         y,
+    )
+
+
+@mcp.tool()
+@_network_required
+async def browser_wait(
+    selector: str | None = None,
+    state: BrowserWaitState = "domcontentloaded",
+    timeout: int = 10_000,
+) -> dict[str, object]:
+    """Wait for page load or a selector state; use after navigation or dynamic actions."""
+
+    return await _browser_wait(
+        selector=selector,
+        state=state,
+        timeout=timeout,
     )
 
 # =========================================================
@@ -1296,55 +1339,6 @@ def git_restore(
     )
 
 # =========================================================
-# PROJECT TOOLS
-# =========================================================
-
-@mcp.tool()
-def detect_project(
-    path: str = ".",
-) -> dict[str, object]:
-    """
-    Detect the project type and configuration markers
-    inside the agent workspace.
-    """
-
-    return _detect_project(
-        workspace,
-        path,
-    )
-
-
-@mcp.tool()
-def detect_framework(
-    path: str = ".",
-) -> dict[str, object]:
-    """
-    Detect application frameworks and major technologies
-    from project configuration files.
-    """
-
-    return _detect_framework(
-        workspace,
-        path,
-    )
-
-
-@mcp.tool()
-def project_commands(
-    path: str = ".",
-) -> dict[str, object]:
-    """
-    Discover commands defined by the current project.
-
-    This tool only discovers commands. It does not execute them.
-    """
-
-    return _project_commands(
-        workspace,
-        path,
-    )
-
-# =========================================================
 # FILESYSTEM TOOLS
 # =========================================================
 
@@ -1361,6 +1355,22 @@ def read_file(
         path,
         start_line,
         end_line,
+    )
+
+
+@mcp.tool()
+def read_files(
+    paths: list[str],
+    max_bytes_per_file: int = MAX_FILE_READ_BYTES,
+    max_total_bytes: int = DEFAULT_MAX_TOTAL_READ_BYTES,
+) -> dict[str, object]:
+    """Read up to 20 workspace files in one call with per-file and total size limits."""
+
+    return _read_files(
+        workspace,
+        paths,
+        max_bytes_per_file=max_bytes_per_file,
+        max_total_bytes=max_total_bytes,
     )
 
 
@@ -1438,35 +1448,6 @@ def directory_tree(
         path,
         max_depth=max_depth,
     )
-
-
-# =========================================================
-# MATH TOOLS
-# =========================================================
-
-@mcp.tool()
-def addition(a: float, b: float) -> float:
-    """Add two numbers."""
-    return _addition(a, b)
-
-
-@mcp.tool()
-def subtraction(a: float, b: float) -> float:
-    """Subtract b from a."""
-    return _subtraction(a, b)
-
-
-@mcp.tool()
-def multiply(a: float, b: float) -> dict:
-    """Multiply two numbers."""
-    return _multiply(a, b)
-
-
-@mcp.tool()
-def division(a: float, b: float) -> dict:
-    """Divide a by b."""
-    return _division(a, b)
-
 
 # =========================================================
 # SERVER

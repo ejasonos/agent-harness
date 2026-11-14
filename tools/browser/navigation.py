@@ -5,7 +5,7 @@ from typing import Any
 from .manager import browser_manager
 
 
-def browser_goto(
+async def browser_goto(
     url: str,
     timeout: int = 30_000,
 ) -> dict[str, Any]:
@@ -27,7 +27,7 @@ def browser_goto(
 
     page = browser_manager.page()
 
-    response = page.goto(
+    response = await page.goto(
         url,
         timeout=timeout,
         wait_until="domcontentloaded",
@@ -35,7 +35,7 @@ def browser_goto(
 
     return {
         "url": page.url,
-        "title": page.title(),
+        "title": await page.title(),
         "status": (
             response.status
             if response is not None
@@ -44,20 +44,20 @@ def browser_goto(
     }
 
 
-def browser_back(
+async def browser_back(
     timeout: int = 30_000,
 ) -> dict[str, Any]:
 
     page = browser_manager.page()
 
-    response = page.go_back(
+    response = await page.go_back(
         timeout=timeout,
         wait_until="domcontentloaded",
     )
 
     return {
         "url": page.url,
-        "title": page.title(),
+        "title": await page.title(),
         "status": (
             response.status
             if response is not None
@@ -66,20 +66,20 @@ def browser_back(
     }
 
 
-def browser_forward(
+async def browser_forward(
     timeout: int = 30_000,
 ) -> dict[str, Any]:
 
     page = browser_manager.page()
 
-    response = page.go_forward(
+    response = await page.go_forward(
         timeout=timeout,
         wait_until="domcontentloaded",
     )
 
     return {
         "url": page.url,
-        "title": page.title(),
+        "title": await page.title(),
         "status": (
             response.status
             if response is not None
@@ -88,20 +88,20 @@ def browser_forward(
     }
 
 
-def browser_reload(
+async def browser_reload(
     timeout: int = 30_000,
 ) -> dict[str, Any]:
 
     page = browser_manager.page()
 
-    response = page.reload(
+    response = await page.reload(
         timeout=timeout,
         wait_until="domcontentloaded",
     )
 
     return {
         "url": page.url,
-        "title": page.title(),
+        "title": await page.title(),
         "status": (
             response.status
             if response is not None
@@ -110,11 +110,11 @@ def browser_reload(
     }
 
 
-def browser_current_page() -> dict[str, Any]:
+async def browser_current_page() -> dict[str, Any]:
 
     page = browser_manager.page()
 
     return {
         "url": page.url,
-        "title": page.title(),
+        "title": await page.title(),
     }

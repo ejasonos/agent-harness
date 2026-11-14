@@ -10,8 +10,7 @@ from agent.loop import AgentLoop, AgentLoopConfig
 from config.settings import load_settings
 from mcp_client.client import MCPClient
 from mcp_client.registry import ToolRegistry
-from model.nvidia_client import NVIDIAClient
-from model.ollama_client import OllamaClient
+from model.factory import create_model_client
 from workspace.manager import WorkspaceManager
 
 
@@ -24,23 +23,8 @@ def run_agent(task: str, workspace_path: str | None = None) -> dict[str, Any]:
     ).expanduser().resolve()
     settings = load_settings(workspace_root)
 
-    provider = os.getenv("MODEL_PROVIDER", "ollama").strip().lower()
-    if provider == "nvidia":
-        model = NVIDIAClient(
-            model=settings.nvidia_model,
-            api_key=settings.nvidia_api_key,
-            base_url=settings.nvidia_endpoint,
-            timeout=600,
-        )
-    elif provider == "ollama":
-        model = OllamaClient(
-            model=settings.model,
-            base_url=settings.ollama_host,
-            timeout=600,
-        )
-        model.ensure_model_available()
-    else:
-        raise ValueError("MODEL_PROVIDER must be 'nvidia' or 'ollama'.")
+    provider = settings.model_provider.strip().lower()
+    model = create_model_client(settings, timeout=600)
 
     workspace = WorkspaceManager(
         settings.require_workspace(),

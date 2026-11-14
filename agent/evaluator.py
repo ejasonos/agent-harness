@@ -5,8 +5,8 @@ from enum import Enum
 
 from agent.state import AgentState, ToolExecution
 from agent.context import ContextManager
+from model.client import ModelClient
 from model.messages import Message
-from model.ollama_client import OllamaClient
 from utils.logging import log_context, log_event
 from utils.task_journal import record_task_event
 
@@ -68,7 +68,7 @@ class Evaluator:
 
     def __init__(
         self,
-        model: OllamaClient,
+        model: ModelClient,
         context: ContextManager | None = None,
     ) -> None:
         self.model = model

@@ -3,6 +3,7 @@ Default configuration for the local agent runtime.
 """
 
 DEFAULT_MODEL = "gemma4:e4b"
+DEFAULT_MODEL_PROVIDER = "nvidia"
 
 DEFAULT_MCP_URL = "http://127.0.0.1:8082/mcp"
 

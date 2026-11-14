@@ -5,7 +5,7 @@ from typing import Any
 from .manager import browser_manager
 
 
-def browser_get_requests(
+async def browser_get_requests(
     limit: int = 100,
 ) -> list[dict[str, Any]]:
 
@@ -19,7 +19,7 @@ def browser_get_requests(
     ]
 
 
-def browser_get_responses(
+async def browser_get_responses(
     limit: int = 100,
 ) -> list[dict[str, Any]]:
 
@@ -33,7 +33,16 @@ def browser_get_responses(
     ]
 
 
-def browser_clear_network() -> dict[str, Any]:
+async def browser_get_failed_requests(
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1.")
+
+    return browser_manager.state.failed_requests[-limit:]
+
+
+async def browser_clear_network() -> dict[str, Any]:
 
     browser_manager.clear_network()
 

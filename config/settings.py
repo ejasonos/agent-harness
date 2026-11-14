@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .defaults import (
     DEFAULT_MODEL,
+    DEFAULT_MODEL_PROVIDER,
     DEFAULT_MCP_URL,
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_MAX_TOOL_CALLS,
@@ -81,6 +82,13 @@ class AgentSettings:
     """
 
     # Model
+    model_provider: str = field(
+        default_factory=lambda: os.getenv(
+            "MODEL_PROVIDER",
+            DEFAULT_MODEL_PROVIDER,
+        )
+    )
+
     model: str = field(
         default_factory=lambda: os.getenv(
             "OLLAMA_MODEL",
@@ -112,7 +120,7 @@ class AgentSettings:
     nvidia_model: str = field(
         default_factory=lambda: os.getenv(
             "NVIDIA_MODEL",
-            "meta/llama-3.2-11b-vision-instruct",
+            "meta/llama-3.3-70b-instruct",
         )
     )
 

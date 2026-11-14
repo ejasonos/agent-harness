@@ -5,7 +5,7 @@ from typing import Any
 from .manager import browser_manager
 
 
-def browser_screenshot(
+async def browser_screenshot(
     path: str | None = None,
     full_page: bool = False,
 ) -> dict[str, Any]:
@@ -19,7 +19,7 @@ def browser_screenshot(
     if path is not None:
         kwargs["path"] = path
 
-    data = page.screenshot(
+    data = await page.screenshot(
         **kwargs
     )
 
@@ -32,7 +32,7 @@ def browser_screenshot(
     }
 
 
-def browser_set_viewport(
+async def browser_set_viewport(
     width: int,
     height: int,
 ) -> dict[str, Any]:
@@ -49,7 +49,7 @@ def browser_set_viewport(
 
     page = browser_manager.page()
 
-    page.set_viewport_size(
+    await page.set_viewport_size(
         {
             "width": width,
             "height": height,
@@ -62,14 +62,14 @@ def browser_set_viewport(
     }
 
 
-def browser_scroll(
+async def browser_scroll(
     x: int = 0,
     y: int = 0,
 ) -> dict[str, Any]:
 
     page = browser_manager.page()
 
-    page.mouse.wheel(
+    await page.mouse.wheel(
         x,
         y,
     )

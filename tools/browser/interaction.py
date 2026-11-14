@@ -8,14 +8,14 @@ from .manager import browser_manager
 DEFAULT_TIMEOUT = 10_000
 
 
-def browser_click(
+async def browser_click(
     selector: str,
     timeout: int = DEFAULT_TIMEOUT,
 ) -> dict[str, Any]:
 
     page = browser_manager.page()
 
-    page.locator(selector).click(
+    await page.locator(selector).click(
         timeout=timeout
     )
 
@@ -27,14 +27,14 @@ def browser_click(
     }
 
 
-def browser_double_click(
+async def browser_double_click(
     selector: str,
     timeout: int = DEFAULT_TIMEOUT,
 ) -> dict[str, Any]:
 
     page = browser_manager.page()
 
-    page.locator(selector).dblclick(
+    await page.locator(selector).dblclick(
         timeout=timeout
     )
 
@@ -46,7 +46,7 @@ def browser_double_click(
     }
 
 
-def browser_fill(
+async def browser_fill(
     selector: str,
     value: str,
     timeout: int = DEFAULT_TIMEOUT,
@@ -54,7 +54,7 @@ def browser_fill(
 
     page = browser_manager.page()
 
-    page.locator(selector).fill(
+    await page.locator(selector).fill(
         value,
         timeout=timeout,
     )
@@ -66,7 +66,7 @@ def browser_fill(
     }
 
 
-def browser_type(
+async def browser_type(
     selector: str,
     text: str,
     delay: int = 0,
@@ -77,11 +77,11 @@ def browser_type(
 
     locator = page.locator(selector)
 
-    locator.click(
+    await locator.click(
         timeout=timeout
     )
 
-    locator.press_sequentially(
+    await locator.press_sequentially(
         text,
         delay=delay,
         timeout=timeout,
@@ -94,7 +94,7 @@ def browser_type(
     }
 
 
-def browser_press(
+async def browser_press(
     selector: str,
     key: str,
     timeout: int = DEFAULT_TIMEOUT,
@@ -102,7 +102,7 @@ def browser_press(
 
     page = browser_manager.page()
 
-    page.locator(selector).press(
+    await page.locator(selector).press(
         key,
         timeout=timeout,
     )
@@ -115,7 +115,7 @@ def browser_press(
     }
 
 
-def browser_select(
+async def browser_select(
     selector: str,
     value: str,
     timeout: int = DEFAULT_TIMEOUT,
@@ -123,7 +123,7 @@ def browser_select(
 
     page = browser_manager.page()
 
-    selected = page.locator(selector).select_option(
+    selected = await page.locator(selector).select_option(
         value,
         timeout=timeout,
     )
@@ -137,14 +137,14 @@ def browser_select(
     }
 
 
-def browser_check(
+async def browser_check(
     selector: str,
     timeout: int = DEFAULT_TIMEOUT,
 ) -> dict[str, Any]:
 
     page = browser_manager.page()
 
-    page.locator(selector).check(
+    await page.locator(selector).check(
         timeout=timeout
     )
 
@@ -155,14 +155,14 @@ def browser_check(
     }
 
 
-def browser_uncheck(
+async def browser_uncheck(
     selector: str,
     timeout: int = DEFAULT_TIMEOUT,
 ) -> dict[str, Any]:
 
     page = browser_manager.page()
 
-    page.locator(selector).uncheck(
+    await page.locator(selector).uncheck(
         timeout=timeout
     )
 
@@ -173,14 +173,14 @@ def browser_uncheck(
     }
 
 
-def browser_hover(
+async def browser_hover(
     selector: str,
     timeout: int = DEFAULT_TIMEOUT,
 ) -> dict[str, Any]:
 
     page = browser_manager.page()
 
-    page.locator(selector).hover(
+    await page.locator(selector).hover(
         timeout=timeout
     )
 

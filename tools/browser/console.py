@@ -5,7 +5,7 @@ from typing import Any
 from .manager import browser_manager
 
 
-def browser_get_console(
+async def browser_get_console(
     limit: int = 100,
 ) -> list[dict[str, Any]]:
 
@@ -19,7 +19,7 @@ def browser_get_console(
     ]
 
 
-def browser_clear_console() -> dict[str, Any]:
+async def browser_clear_console() -> dict[str, Any]:
 
     browser_manager.clear_console()
 

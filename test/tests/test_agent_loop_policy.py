@@ -143,6 +143,12 @@ def test_registered_tool_names_receive_policies():
         "browser_page_text"
     ).prerequisites == []
     assert registry._default_policy_for_tool(
+        "browser_wait"
+    ).prerequisites == []
+    assert registry._default_policy_for_tool(
+        "browser_get_failed_requests"
+    ).prerequisites == []
+    assert registry._default_policy_for_tool(
         "web_download"
     ).prerequisites == [
         "workspace_discovered",

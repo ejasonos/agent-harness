@@ -25,8 +25,8 @@ from config.defaults import (
 )
 from mcp_client.client import MCPClient
 from mcp_client.registry import ToolRegistry
+from model.client import ModelClient
 from model.messages import Message, ToolCall
-from model.ollama_client import OllamaClient
 from workspace.manager import WorkspaceManager
 from utils.logging import log_context, log_event, log_payloads_enabled, new_run_id
 from utils.task_journal import (
@@ -111,7 +111,7 @@ class AgentLoop:
 
     def __init__(
         self,
-        model: OllamaClient,
+        model: ModelClient,
         mcp_client: MCPClient,
         registry: ToolRegistry,
         workspace: WorkspaceManager,

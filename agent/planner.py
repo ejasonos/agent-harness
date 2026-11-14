@@ -5,8 +5,8 @@ from typing import Any
 
 from agent.context import ContextManager
 from agent.state import AgentState
+from model.client import ModelClient
 from model.messages import Message, ModelResponse
-from model.ollama_client import OllamaClient
 from utils.logging import log_context, log_event
 
 
@@ -34,7 +34,7 @@ class Planner:
 
     def __init__(
         self,
-        model: OllamaClient,
+        model: ModelClient,
         context: ContextManager | None = None,
     ) -> None:
         self.model = model
@@ -58,7 +58,13 @@ class Planner:
                 "Follow the evaluator's required phase and the runtime's "
                 "tool policies. Do not claim completion because a tool "
                 "succeeded; the evaluator controls completion and the "
-                "runtime requires verification after mutations. Do not "
+                "runtime requires verification after mutations. For public "
+                "web research, use web_search; for opening, interacting with, "
+                "or inspecting a live page, use browser tools. Launch the "
+                "browser first, wait for dynamic content when needed, inspect "
+                "the page with browser_page_snapshot, and use "
+                "browser_get_failed_requests or "
+                "browser_get_console to diagnose failures. Do not "
                 "use delegate_task except for an independent read-only "
                 "investigation; the parent owns all changes and final "
                 "completion. Do not reveal private chain-of-thought. "

@@ -178,6 +178,8 @@ class ToolRegistry:
 
         browser_inspection_tools = {
             "browser_page_text",
+            "browser_page_snapshot",
+            "browser_page_snapshot",
             "browser_element_text",
             "browser_element_attribute",
             "browser_element_exists",
@@ -186,6 +188,7 @@ class ToolRegistry:
             "browser_get_console",
             "browser_get_requests",
             "browser_get_responses",
+            "browser_get_failed_requests",
         }
 
         # ---------------------------------------------------------
@@ -312,6 +315,7 @@ class ToolRegistry:
             "browser_reload",
             "browser_clear_console",
             "browser_clear_network",
+            "browser_wait",
         }
 
         # ---------------------------------------------------------

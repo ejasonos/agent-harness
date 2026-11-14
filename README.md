@@ -1,6 +1,6 @@
 # Local Agent
 
-Local Agent is a model-directed AI agent. It connects a model to an HTTP MCP server that exposes workspace, Git, shell, browser, conversion, screenshot, testing, and math tools. Use the Python `AgentLoop` API to submit tasks and inspect tool activity.
+Local Agent is a model-directed AI agent. It connects a model to an HTTP MCP server that exposes workspace, Git, shell, browser, conversion, screenshot, and testing tools. Use the Python `AgentLoop` API to submit tasks and inspect tool activity.
 
 ## Quick Start
 
@@ -21,7 +21,7 @@ If PowerShell blocks activation, use `\.venv\Scripts\python.exe` in place of `py
 
 ### 2. Configure a model
 
-The default provider is Ollama, using `gemma4:e4b` at `http://127.0.0.1:11434`. Install Ollama for Windows from [ollama.com/download](https://ollama.com/download/windows), then open a new terminal and download the configured model:
+The default provider is NVIDIA's hosted inference API. Set `NVIDIA_API_KEY` in `.env`; the default endpoint is `https://integrate.api.nvidia.com/v1` and the default model is `meta/llama-3.3-70b-instruct`. Ollama remains available by setting `MODEL_PROVIDER=ollama` and installing the configured local model:
 
 ```powershell
 ollama pull gemma4:e4b
@@ -30,7 +30,7 @@ ollama list
 
 The Ollama desktop app normally starts its local service. If the service is not running, start it in a separate terminal with `ollama serve`. Confirm the model responds with `ollama run gemma4:e4b` and exit the model prompt with `/bye`.
 
-The development runner, `test_agent_loop.py`, routes through the local Ollama server to `beam:cloud` and explicitly opts into cloud-tagged models. Cloud inference may consume provider quota or credits. For local-only inference, use the quick-start example with the installed `OLLAMA_MODEL` (default `gemma4:e4b`). To use NVIDIA instead, configure `NVIDIA_API_KEY` and explicitly construct and pass an `NVIDIAClient`; the default NVIDIA model is `meta/llama-3.2-11b-vision-instruct`.
+The development runner, `test_agent_loop.py`, uses the provider selected by `MODEL_PROVIDER` (NVIDIA by default). NVIDIA inference may consume provider quota or credits.
 
 ### 3. Start the MCP server
 
@@ -53,7 +53,7 @@ from agent.loop import AgentLoop, AgentLoopConfig
 from config.settings import load_settings
 from mcp_client.client import MCPClient
 from mcp_client.registry import ToolRegistry
-from model.ollama_client import OllamaClient
+from model.factory import create_model_client
 from workspace.manager import WorkspaceManager
 
 load_dotenv()
@@ -69,12 +69,7 @@ workspace = WorkspaceManager(
 	allow_shell=settings.allow_shell,
 	allow_network=settings.allow_network,
 )
-model = OllamaClient(
-	model=settings.model,
-	base_url=settings.ollama_host,
-	timeout=600,
-)
-model.ensure_model_available()
+model = create_model_client(settings, timeout=600)
 agent = AgentLoop(
 	model=model,
 	mcp_client=mcp_client,
@@ -105,31 +100,37 @@ if result.error:
 	print(result.error)
 ```
 
-Replace the example task and workspace path with your own. `result.tool_executions` contains each tool's name, reason, arguments, result, and status. To use NVIDIA instead of Ollama, construct `NVIDIAClient` with `settings.nvidia_model`, `settings.nvidia_api_key`, and `settings.nvidia_endpoint`.
+Replace the example task and workspace path with your own. `result.tool_executions` contains each tool's name, reason, arguments, result, and status. Set `MODEL_PROVIDER=ollama` to use Ollama instead of the default NVIDIA provider.
 
 The MCP server and agent program must use the same workspace directory. The server uses `AGENT_WORKSPACE` or its current working directory; `load_settings(workspace_path)` configures the agent's local workspace.
 
-### How Ollama Is Wired In
+### How Model Providers Are Wired In
 
-For a local Ollama model, the project already contains the client and configuration path; the agent loop and MCP server do not need provider-specific changes:
+The agent runner uses `MODEL_PROVIDER` to select the inference client. Both supported providers implement the shared `chat()` interface; the agent loop and MCP server do not need provider-specific changes:
 
-- `config/defaults.py` sets the default model name to `gemma4:e4b`.
-- `config/settings.py` reads `OLLAMA_MODEL` and `OLLAMA_HOST` from the environment and supplies those values to the client.
+- `config/defaults.py` sets NVIDIA as the default provider and `gemma4:e4b` as the Ollama model.
+- `config/settings.py` reads `MODEL_PROVIDER` and the selected provider's endpoint, model, and credentials from the environment.
 - `model/ollama_client.py` sends chat requests to Ollama's `/api/chat` endpoint and exposes the available-model health/list checks. It uses the `requests` dependency already in `requirements.txt`; no Ollama Python package is needed.
-- `test_agent_loop.py` constructs `OllamaClient` from those settings and passes it to `AgentLoop`. This is the provider selection point for that runner.
+- `model/factory.py` creates the configured NVIDIA or Ollama client; `test_agent_loop.py` and the Prefect flow both use it.
 - `agent/planner.py` calls the provider through the shared `chat()` interface. It can stay unchanged when switching between the Ollama and NVIDIA clients.
 - `fastmcp_tools_http.py` is a separate tools server. It does not call the model and does not need Ollama configuration.
 
-Set these values in the project `.env` file when using a different model or Ollama host:
+Set these values in the project `.env` file to select a provider and configure its endpoint/model:
 
 ```dotenv
+MODEL_PROVIDER=nvidia
+NVIDIA_API_KEY=your-key
+NVIDIA_ENDPOINT=https://integrate.api.nvidia.com/v1
+NVIDIA_MODEL=meta/llama-3.3-70b-instruct
+
+# Optional local Ollama configuration (set MODEL_PROVIDER=ollama to use it)
 OLLAMA_MODEL=gemma4:e4b
 OLLAMA_HOST=http://127.0.0.1:11434
 ```
 
-`OLLAMA_HOST` is the Ollama server's base URL, not the `/api/chat` endpoint. `OLLAMA_MODEL` must match a model shown by `ollama list` and should support tool calling if you expect the agent to use MCP tools. After changing `.env`, restart the agent process. Ollama handles local inference; web search is a separate tool and still requires network access and `TAVILY_API_KEY`.
+For Ollama, `OLLAMA_HOST` is the server's base URL, not the `/api/chat` endpoint, and `OLLAMA_MODEL` must match an installed model that supports tool calling. After changing `.env`, restart the agent process. Web search is a separate tool and still requires network access and `TAVILY_API_KEY`.
 
-The local runner and Prefect Ollama path call `ensure_model_available()` before starting the agent. It queries only `/api/tags`, verifies the configured model is installed, and fails with a local setup hint if it is not. This preflight makes no generation request. Cloud-tagged Ollama model names are rejected to avoid silently using remote inference.
+The Ollama provider calls `ensure_model_available()` before starting the agent. It queries only `/api/tags`, verifies the configured model is installed, and fails with a local setup hint if it is not. This preflight makes no generation request. Cloud-tagged Ollama model names are rejected to avoid silently using remote inference.
 
 Inference internals such as KV caching, paged attention, continuous batching, and speculative decoding stay with the configured serving engine (Ollama or NVIDIA). This Python agent records provider usage and latency but does not reimplement model serving. Fine-tuning or vector retrieval should be added only when offline trajectory evaluations identify a concrete quality gap or a corpus that workspace/web search cannot cover.
 
@@ -152,14 +153,14 @@ The MCP server and your agent program can load a `.env` file from the project di
 ```dotenv
 AGENT_WORKSPACE=C:\path\to\your\project
 MCP_URL=http://127.0.0.1:8082/mcp
-MODEL_PROVIDER=ollama
-OLLAMA_HOST=http://127.0.0.1:11434
-OLLAMA_MODEL=gemma4:e4b
-
-# Optional NVIDIA API provider
+MODEL_PROVIDER=nvidia
 NVIDIA_API_KEY=your-key
 NVIDIA_ENDPOINT=https://integrate.api.nvidia.com/v1
-NVIDIA_MODEL=meta/llama-3.2-11b-vision-instruct
+NVIDIA_MODEL=meta/llama-3.3-70b-instruct
+
+# Optional Ollama configuration
+OLLAMA_HOST=http://127.0.0.1:11434
+OLLAMA_MODEL=gemma4:e4b
 
 # Required for web_search
 TAVILY_API_KEY=your-tavily-key
@@ -193,12 +194,12 @@ Available runtime settings include:
 | --- | --- | --- |
 | `AGENT_WORKSPACE` | Current directory | Root used by the MCP server. Set the UI to the same path. |
 | `MCP_URL` | `http://127.0.0.1:8082/mcp` | MCP endpoint used by the agent. |
-| `MODEL_PROVIDER` | `ollama` | Uses local Ollama by default; `nvidia` explicitly selects the hosted NVIDIA API. |
+| `MODEL_PROVIDER` | `nvidia` | Uses NVIDIA by default; set `ollama` to select local Ollama. |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama API URL. |
 | `OLLAMA_MODEL` | `gemma4:e4b` | Default local model. |
 | `NVIDIA_API_KEY` | Unset | Required when using NVIDIA API. |
 | `NVIDIA_ENDPOINT` | `https://integrate.api.nvidia.com/v1` | NVIDIA-compatible API endpoint. |
-| `NVIDIA_MODEL` | `meta/llama-3.2-11b-vision-instruct` | Default NVIDIA model. |
+| `NVIDIA_MODEL` | `meta/llama-3.3-70b-instruct` | Default NVIDIA model. |
 | `TAVILY_API_KEY` | Unset | Required by the Tavily-backed `web_search` tool. |
 | `ALLOW_DELETE` | `true` | Enables delete operations. Set to `false` to disable them. |
 | `ALLOW_GIT_WRITE` | `false` | Enables Git mutations. |
@@ -237,35 +238,47 @@ Deletion is enabled by default. To turn it off, set `ALLOW_DELETE=false` before 
 
 ## Available Tool Groups
 
-- **Filesystem:** read, write, edit, search, list, and delete files or directories.
-- **Project:** detect projects and frameworks, discover project commands.
+- **Filesystem:** read one or multiple files, write, edit, search, list, and delete files or directories.
 - **Git:** inspect status, diffs, and history; selected Git mutations are permission-controlled.
 - **Shell and processes:** execute commands and manage launched processes.
 - **Browser:** navigate, interact with pages, inspect console/network activity, and capture screenshots.
 - **Documents and images:** extract or convert document, PDF, HTML, and image content.
 - **Testing and diagnostics:** run tests, linters, formatters, type checks, builds, and diagnostic collection.
-- **Math:** addition, subtraction, multiplication, and division.
 
-The browser tools use Playwright Chromium. Install its browser binary if browser launch reports that Chromium is missing:
+The browser tools use Playwright's async API with Chromium. Install its browser binary if browser launch reports that Chromium is missing:
 
 ```powershell
 python -m playwright install chromium
 ```
+
+For a live-page task, agents should launch the browser, navigate with `browser_goto`, use `browser_wait` for client-rendered content, inspect with `browser_page_snapshot`, then pass a returned role selector (for example `role=button[name="Continue"]`) to an action tool. If navigation or an action appears to fail, check `browser_get_failed_requests`, `browser_get_responses`, and `browser_get_console`. Request and response history is retained across tabs and bounded to the most recent 1,000 events per category.
+
+The browser and web tools serve different purposes: `web_search` discovers public information, while browser tools open and interact with a live page. Static extraction tools (`web_open`, `web_extract_text`, `web_extract_links`) are lighter alternatives when interaction is not needed.
+
+For advanced agents, consider removing or exposing on demand:
+
+- `quote_shell_argument`, `build_shell_command`, and `parse_shell_command` if `inspect_shell_command` plus `execute_command` already cover your preferred shell workflow.
+- `browser_double_click` and `browser_type` for agents that can use `browser_click` and `browser_fill`; keep them only for UI tasks that specifically need those behaviors.
+- Duplicate screenshot workflows: use `browser_screenshot` for web pages and `capture_screen` / `capture_region` only for desktop applications.
+- The document/image conversion tools when a deployment does not process those file types.
+
+Keep the focused file operations, Git inspection, testing, and diagnostics tools. They provide distinct capabilities that general shell access cannot return as structured, verifiable results. Prefer server-side task profiles or filtered tool discovery over permanently deleting tools needed by some workloads.
 
 ## Checks and Troubleshooting
 
 With the MCP server running, list the tools currently exposed by its endpoint:
 
 ```powershell
-python test_registry.py
+python .\test\test_registry.py
 ```
 
-The script prints the endpoint and discovered tool schemas, and fails if the four math tools are missing. If tools are missing, confirm `MCP_URL`, restart the MCP server after code or configuration changes, and run the check again.
+The script prints discovered tool schemas and verifies that the file-batch and browser workflow tools are exposed. If tools are missing, confirm `MCP_URL`, restart the MCP server after code or configuration changes, and run the check again.
 
 Run the focused pytest suite:
 
 ```powershell
 python -m pytest -q test/tests
+python -m pytest -q test/test_browser_tools.py
 ```
 
 If the agent cannot connect, confirm the MCP server is running and that `MCP_URL` points to it. If model requests fail, check that Ollama is running with the selected model or that `NVIDIA_API_KEY` is configured.
@@ -292,7 +305,7 @@ For a private Git repository, configure a Prefect GitHub Credentials block and r
 | --- | --- |
 | `AGENT_WORKSPACE` | Existing workspace directory available to the flow runtime. Defaults to the checked-out repository directory. |
 | `MCP_URL` | HTTP MCP endpoint reachable from the flow runtime. |
-| `MODEL_PROVIDER` | `nvidia` or `ollama`; defaults to `ollama`. |
+| `MODEL_PROVIDER` | `nvidia` or `ollama`; defaults to `nvidia`. |
 | `NVIDIA_API_KEY` | Required when `MODEL_PROVIDER=nvidia`. |
 | `NVIDIA_MODEL` / `NVIDIA_ENDPOINT` | Optional NVIDIA model and API endpoint overrides. |
 | `OLLAMA_HOST` / `OLLAMA_MODEL` | Ollama URL and model; the service must be reachable from the flow runtime. |

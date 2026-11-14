@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from workspace.manager import WorkspaceManager
 
 def read_file(
@@ -9,12 +7,17 @@ def read_file(
     path: str,
     start_line: int | None = None,
     end_line: int | None = None,
+    max_bytes: int | None = None,
 ) -> str:
     """
     Read a text file inside the agent workspace.
 
     Lines are 1-based and inclusive.
+    max_bytes limits the raw file size when supplied by a batch reader.
     """
+
+    if max_bytes is not None and max_bytes < 1:
+        raise ValueError("max_bytes must be >= 1.")
 
     file_path = workspace.read_path(path)
 
@@ -28,9 +31,16 @@ def read_file(
             f"Path is not a file: {path}"
         )
 
-    content = file_path.read_text(
-        encoding="utf-8"
-    )
+    if max_bytes is None:
+        content = file_path.read_text(encoding="utf-8")
+    else:
+        with file_path.open("rb") as file:
+            data = file.read(max_bytes + 1)
+        if len(data) > max_bytes:
+            raise ValueError(
+                f"File {path!r} exceeds the {max_bytes}-byte read limit."
+            )
+        content = data.decode("utf-8")
 
     lines = content.splitlines()
 

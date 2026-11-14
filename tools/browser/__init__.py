@@ -26,6 +26,7 @@ from .interaction import (
 
 from .inspection import (
     browser_page_text,
+    browser_page_snapshot,
     browser_element_text,
     browser_element_attribute,
     browser_element_exists,
@@ -40,8 +41,11 @@ from .console import (
 from .network import (
     browser_get_requests,
     browser_get_responses,
+    browser_get_failed_requests,
     browser_clear_network,
 )
+
+from .waiting import browser_wait
 
 from .viewport import (
     browser_screenshot,
@@ -68,6 +72,7 @@ __all__ = [
     "browser_uncheck",
     "browser_hover",
     "browser_page_text",
+    "browser_page_snapshot",
     "browser_element_text",
     "browser_element_attribute",
     "browser_element_exists",
@@ -76,7 +81,9 @@ __all__ = [
     "browser_clear_console",
     "browser_get_requests",
     "browser_get_responses",
+    "browser_get_failed_requests",
     "browser_clear_network",
+    "browser_wait",
     "browser_screenshot",
     "browser_set_viewport",
     "browser_scroll",
