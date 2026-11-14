@@ -11,7 +11,6 @@ from urllib.request import Request, urlopen
 from fastmcp import FastMCP
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from dotenv import load_dotenv
-# from agent_status import observe_url
 
 from config.settings import load_settings
 from workspace.manager import WorkspaceManager

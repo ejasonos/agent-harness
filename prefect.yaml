@@ -11,7 +11,7 @@ pull:
       branch: main
   - prefect.deployments.steps.pip_install_requirements:
       directory: "{{ clone.directory }}"
-      requirements_file: requirements.txt
+      requirements_file: requirements-prefect.txt
   - prefect.deployments.steps.set_working_directory:
       directory: "{{ clone.directory }}"
 

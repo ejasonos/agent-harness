@@ -14,7 +14,7 @@ Python 3.10 or later is recommended.
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-local.txt
 ```
 
 If PowerShell blocks activation, use `\.venv\Scripts\python.exe` in place of `python` for the remaining commands.
@@ -292,7 +292,7 @@ If the agent cannot connect, confirm the MCP server is running and that `MCP_URL
 This deployment definition uses Prefect Managed infrastructure and clones this repository for each flow run. Push the repository to a Git remote, then configure the deployment environment and create the work pool:
 
 ```powershell
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-prefect.txt
 prefect cloud login
 $env:PREFECT_SOURCE_URL = "https://github.com/OWNER/REPOSITORY.git"
 prefect work-pool create local-agent-managed --type prefect:managed
@@ -321,6 +321,6 @@ If the hosting platform runs `fastmcp inspect` to build an MCP server, use `serv
 
 ### Vercel Hosting
 
-`app.py` exposes the full FastMCP server as a stateless ASGI application for Vercel's Python Functions. Connect AgentStatus to `https://<your-vercel-domain>/mcp` and set its monitor authentication to `None`. In Vercel project settings, ensure Deployment Protection does not require login for the production endpoint. Vercel automatically detects `app.py` as the Python ASGI entry point and installs `requirements.txt`.
+`app.py` exposes the FastMCP server as a stateless ASGI application for Vercel's Python Functions. Connect AgentStatus to `https://<your-vercel-domain>/mcp` and set its monitor authentication to `None`. In Vercel project settings, ensure Deployment Protection does not require login for the production endpoint. Vercel automatically detects `app.py` as the Python ASGI entry point and installs the intentionally slim `requirements.txt`; Prefect, test tooling, and optional PDF, DOCX, image, and desktop screenshot dependencies are kept out of this function bundle. Those optional tools require `requirements-local.txt`. Browser actions also require a Chromium executable provisioned separately; installing Playwright alone does not install a browser.
 
 This publishes the complete tool set without authentication, including shell execution and filesystem write/delete operations. Any internet user who can reach the endpoint can invoke them; there is no way to limit access to "legitimate users" when the endpoint has no authentication. The Vercel workspace is deployment-local and ephemeral: file changes are not a durable shared workspace, and browser/process state is not guaranteed between requests. Function time limits also apply. Do not add API keys or other secrets to Vercel environment variables for this public deployment. Use a persistent container host with authentication for real workspace edits and long-running tasks.

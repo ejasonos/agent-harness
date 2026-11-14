@@ -1,0 +1,9 @@
+-r requirements.txt
+-r requirements-prefect.txt
+Pillow
+PyMuPDF
+reportlab
+python-docx
+pyautogui
+openai
+pytest
